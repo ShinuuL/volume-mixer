@@ -1,0 +1,33 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VolumeMixer", "VolumeMixer\VolumeMixer.csproj", "{93CBD3EF-79CE-4EA3-85C8-8C766E359969}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{2F85E6AC-553D-407F-92C4-3DCE875968C7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VolumeMixer.Tests", "tests\VolumeMixer.Tests\VolumeMixer.Tests.csproj", "{651DD054-0398-4AD7-A107-E8FCEA72234A}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{93CBD3EF-79CE-4EA3-85C8-8C766E359969}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{93CBD3EF-79CE-4EA3-85C8-8C766E359969}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{93CBD3EF-79CE-4EA3-85C8-8C766E359969}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{93CBD3EF-79CE-4EA3-85C8-8C766E359969}.Release|Any CPU.Build.0 = Release|Any CPU
+		{651DD054-0398-4AD7-A107-E8FCEA72234A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{651DD054-0398-4AD7-A107-E8FCEA72234A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{651DD054-0398-4AD7-A107-E8FCEA72234A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{651DD054-0398-4AD7-A107-E8FCEA72234A}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{651DD054-0398-4AD7-A107-E8FCEA72234A} = {2F85E6AC-553D-407F-92C4-3DCE875968C7}
+	EndGlobalSection
+EndGlobal
