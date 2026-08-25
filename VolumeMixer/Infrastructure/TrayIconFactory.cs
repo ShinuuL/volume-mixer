@@ -1,9 +1,13 @@
 using System.Drawing;
+using System.Runtime.InteropServices;
 
 namespace VolumeMixer.Infrastructure;
 
 internal static class TrayIconFactory
 {
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr hIcon);
+
     /// <summary>Alto-falante simples desenhado em 16x16; evita asset binário.</summary>
     public static Icon Create()
     {
@@ -17,6 +21,17 @@ internal static class TrayIconFactory
         using var pen = new Pen(brush, 1.6f);
         g.DrawArc(pen, 10, 4, 4, 8, -60, 120);
         g.DrawArc(pen, 12, 2, 6, 12, -60, 120);
-        return Icon.FromHandle(bmp.GetHicon());
+
+        var hIcon = bmp.GetHicon();
+        try
+        {
+            // Clone so the returned Icon owns its own GDI handle.
+            using var temp = Icon.FromHandle(hIcon);
+            return (Icon)temp.Clone();
+        }
+        finally
+        {
+            DestroyIcon(hIcon);
+        }
     }
 }
