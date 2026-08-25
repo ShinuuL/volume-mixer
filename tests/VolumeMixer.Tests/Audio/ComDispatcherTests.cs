@@ -175,11 +175,14 @@ public class ComDispatcherTests
     [Fact]
     public async Task Post_concurrent_com_Dispose_nao_lanca()
     {
+        // Exercises the race where Post passes the _disposed check then Dispose
+        // disposes _queue: CompleteAdding → InvalidOperationException,
+        // queue.Dispose → ObjectDisposedException. Both must be harmless.
         var dispatcher = new ComDispatcher();
         var exceptionSeen = false;
-        var tasks = Enumerable.Range(0, 100).Select(_ => Task.Run(() =>
+        var tasks = Enumerable.Range(0, 200).Select(_ => Task.Run(() =>
         {
-            for (var j = 0; j < 10; j++)
+            for (var j = 0; j < 20; j++)
             {
                 try { dispatcher.Post(() => { }); }
                 catch { exceptionSeen = true; }

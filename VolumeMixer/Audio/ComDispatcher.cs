@@ -83,6 +83,8 @@ internal sealed class ComDispatcher : IDisposable
         if (_disposed) return;
         try { _queue.Add(action); }
         catch (InvalidOperationException) { }
+        // ObjectDisposedException inherits from InvalidOperationException,
+        // so the catch above already covers the queue-disposed race path.
     }
 
     public void Dispose()
