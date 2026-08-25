@@ -10,16 +10,27 @@ public sealed partial class AudioController : IAudioController
 {
     private readonly SynchronizationContext? _syncContext;
     private readonly ComCallbacks _callbacks;
+    private readonly ComDispatcher _dispatcher;
+    private readonly SessionNotificationSink _sessionNotificationSink;
     private IMMDeviceEnumerator? _deviceEnumerator;
     private IMMDevice? _device;
     private IAudioEndpointVolume? _endpoint;
     private IAudioSessionManager2? _sessionManager;
     private IAudioSessionEnumerator? _sessionEnumerator;
-    private readonly Dictionary<int, List<ISimpleAudioVolume>> _pidVolumes = new();
-    private readonly Dictionary<int, SessionEventSink> _sessionSinks = new();
-    private readonly SessionNotificationSink _sessionNotificationSink;
+    private readonly Dictionary<int, List<SessionEntry>> _sessions = new();
     private static readonly ConcurrentDictionary<string, byte[]> IconCacheByExe = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
+
+    /// <summary>Tracks one audio session: control RCW (for unregister), sink, and volume RCW.</summary>
+    private sealed class SessionEntry(
+        IAudioSessionControl Control,
+        SessionEventSink Sink,
+        ISimpleAudioVolume Volume)
+    {
+        internal IAudioSessionControl Control { get; } = Control;
+        internal SessionEventSink Sink { get; } = Sink;
+        internal ISimpleAudioVolume Volume { get; } = Volume;
+    }
 
     public event EventHandler? SessionsChanged;
     public event EventHandler? MasterChanged;
@@ -29,11 +40,18 @@ public sealed partial class AudioController : IAudioController
         _syncContext = SynchronizationContext.Current;
         _callbacks = new ComCallbacks(this);
         _sessionNotificationSink = new SessionNotificationSink(this);
-        _deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
-        _deviceEnumerator.RegisterEndpointNotificationCallback(_callbacks.DeviceNotifications);
-        ActivateDefaultDevice();
+        _dispatcher = new ComDispatcher();
+
+        // Marshal all COM object creation to the dedicated MTA thread.
+        _dispatcher.Invoke(() =>
+        {
+            _deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
+            _deviceEnumerator.RegisterEndpointNotificationCallback(_callbacks.DeviceNotifications);
+            ActivateDefaultDevice();
+        });
     }
 
+    /// <summary>Create device + endpoint + session manager + enumerator on current (MTA) thread.</summary>
     private void ActivateDefaultDevice()
     {
         _deviceEnumerator!.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out _device);
@@ -41,6 +59,7 @@ public sealed partial class AudioController : IAudioController
         _device!.Activate(ref iidEndpoint, ComCtx.ClsCtxAll, IntPtr.Zero, out var endpointObj);
         _endpoint = (IAudioEndpointVolume)endpointObj;
         _endpoint.RegisterControlChangeNotify(_callbacks.EndpointCallback);
+
         var iidManager = typeof(IAudioSessionManager2).GUID;
         try
         {
@@ -51,49 +70,113 @@ public sealed partial class AudioController : IAudioController
         }
         catch
         {
-            // Alguns ambientes não expõem o gerenciador de sessões (Activate falha com
-            // E_NOINTERFACE — ex.: builds Insider recentes, RDP com áudio redirecionado).
-            // Segue sem sessões por aplicativo; o controle master permanece funcional.
+            // Alguns ambientes nao expoem o gerenciador de sessoes (E_NOINTERFACE em RDP etc.).
             Release(ref _sessionEnumerator);
             Release(ref _sessionManager);
         }
         RefreshSessionCache();
     }
 
+    // ──────────────── Public synchronous API (marshalled to MTA) ────────────────
+
     public MasterInfo GetMaster()
     {
         ThrowIfDisposed();
-        _endpoint!.GetMasterVolumeLevelScalar(out var level);
-        _endpoint.GetMute(out var mute);
-        return new MasterInfo(Math.Round(level * 100d), mute);
+        return _dispatcher.Invoke(() =>
+        {
+            _endpoint!.GetMasterVolumeLevelScalar(out var level);
+            _endpoint.GetMute(out var mute);
+            return new MasterInfo(Math.Round(level * 100d), mute);
+        });
     }
 
     public void SetMasterVolume(double percent)
     {
         ThrowIfDisposed();
         var level = (float)(Math.Clamp(percent, 0, 100) / 100d);
-        var ctx = ComCtx.Empty;
-        _endpoint!.SetMasterVolumeLevelScalar(level, ref ctx);
+        _dispatcher.Invoke(() =>
+        {
+            var ctx = ComCtx.Empty;
+            _endpoint!.SetMasterVolumeLevelScalar(level, ref ctx);
+        });
     }
 
     public void SetMasterMute(bool mute)
     {
         ThrowIfDisposed();
-        var ctx = ComCtx.Empty;
-        _endpoint!.SetMute(mute, ref ctx);
+        _dispatcher.Invoke(() =>
+        {
+            var ctx = ComCtx.Empty;
+            _endpoint!.SetMute(mute, ref ctx);
+        });
     }
+
+    public IReadOnlyList<AppVolume> GetSessions()
+    {
+        ThrowIfDisposed();
+        return _dispatcher.Invoke(() =>
+        {
+            var result = new List<AppVolume>();
+            foreach (var (pid, entries) in _sessions)
+            {
+                if (entries.Count == 0) continue;
+                try
+                {
+                    entries[0].Volume.GetMasterVolume(out var level);
+                    entries[0].Volume.GetMute(out var mute);
+                    result.Add(new AppVolume(pid, ResolveProcessName(pid), ResolveIconPng(pid),
+                        Math.Round(level * 100d), mute));
+                }
+                catch { /* session may have died */ }
+            }
+            return result.OrderBy(a => a.ProcessName, StringComparer.OrdinalIgnoreCase).ToList();
+        });
+    }
+
+    public void SetSessionVolume(int processId, double percent)
+    {
+        ThrowIfDisposed();
+        var level = (float)(Math.Clamp(percent, 0, 100) / 100d);
+        _dispatcher.Invoke(() =>
+        {
+            if (!_sessions.TryGetValue(processId, out var entries)) return;
+            foreach (var entry in entries)
+            {
+                var ctx = ComCtx.Empty;
+                try { entry.Volume.SetMasterVolume(level, ref ctx); } catch { }
+            }
+        });
+    }
+
+    public void SetSessionMute(int processId, bool mute)
+    {
+        ThrowIfDisposed();
+        _dispatcher.Invoke(() =>
+        {
+            if (!_sessions.TryGetValue(processId, out var entries)) return;
+            foreach (var entry in entries)
+            {
+                var ctx = ComCtx.Empty;
+                try { entry.Volume.SetMute(mute, ref ctx); } catch { }
+            }
+        });
+    }
+
+    // ──────────────── Session cache (runs on MTA thread) ────────────────
 
     private void RefreshSessionCache()
     {
-        ReleasePidVolumes();
+        ReleaseAllSessions();
         if (_sessionEnumerator is null) return;
 
         _sessionEnumerator.GetCount(out var count);
         for (var i = 0; i < count; i++)
         {
+            IAudioSessionControl? control = null;
+            bool transferred = false;
             try
             {
-                _sessionEnumerator.GetSession(i, out var control);
+                _sessionEnumerator.GetSession(i, out control);
                 var control2 = (IAudioSessionControl2)control;
                 control2.GetState(out var state);
                 if (state == AudioSessionState.Expired) continue;
@@ -102,68 +185,87 @@ public sealed partial class AudioController : IAudioController
                 var pid = (int)pidNative;
                 if (pid == 0 || control2.IsSystemSoundsSessionSafe()) continue;
 
-                var volume = (ISimpleAudioVolume)control; // QI direto no objeto da sessão
-                if (!_pidVolumes.TryGetValue(pid, out var list))
-                    _pidVolumes[pid] = list = new List<ISimpleAudioVolume>();
-                list.Add(volume);
+                var volume = (ISimpleAudioVolume)control;
+                var sink = new SessionEventSink(this);
+                control.RegisterAudioSessionNotification(sink);
 
-                if (!_sessionSinks.ContainsKey(pid))
-                {
-                    var sink = new SessionEventSink(this);
-                    control.RegisterAudioSessionNotification(sink);
-                    _sessionSinks[pid] = sink;
-                }
+                if (!_sessions.TryGetValue(pid, out var list))
+                    _sessions[pid] = list = new List<SessionEntry>();
+                list.Add(new SessionEntry(control, sink, volume));
+                transferred = true;
             }
-            catch { /* sessão pode morrer no meio da enumeração */ }
+            catch { /* session may die during enumeration */ }
+            finally
+            {
+                // Release locally-acquired control RCW on every skip / failure path.
+                if (!transferred)
+                    ReleaseControl(control);
+            }
         }
     }
 
-    private void ReleasePidVolumes()
+    /// <summary>Unregister every sink, release every control + volume RCW, clear.</summary>
+    private void ReleaseAllSessions()
     {
-        foreach (var sink in _sessionSinks.Values) { /* sinks são managed; GC cuida */ }
-        _sessionSinks.Clear();
-        foreach (var list in _pidVolumes.Values)
-            foreach (var vol in list)
-                try { _ = Marshal.ReleaseComObject(vol); } catch { }
-        _pidVolumes.Clear();
+        foreach (var list in _sessions.Values)
+            foreach (var entry in list)
+            {
+                try { entry.Control.UnregisterAudioSessionNotification(entry.Sink); } catch { }
+                ReleaseControl(entry.Control);
+                ReleaseComObject(entry.Volume);
+            }
+        _sessions.Clear();
     }
 
-    public IReadOnlyList<AppVolume> GetSessions()
+    // ──────────────── Callbacks from COM (fire on MTA thread) ────────────────
+
+    /// <summary>Called by session sinks on MTA thread: refresh cache, then notify UI.</summary>
+    internal void NotifySessionsChanged()
     {
-        ThrowIfDisposed();
-        var result = new List<AppVolume>();
-        foreach (var (pid, volumes) in _pidVolumes)
+        RefreshSessionCache();
+        Post(SessionsChanged);
+    }
+
+    /// <summary>Called by endpoint/device callbacks on MTA thread: just post to UI.</summary>
+    internal void NotifyMasterChanged() => Post(MasterChanged);
+
+    /// <summary>Device-default-changed callback (already on MTA thread from COM).</summary>
+    internal void RebuildCore()
+    {
+        if (_disposed) return;
+        try
         {
-            if (volumes.Count == 0) continue;
-            volumes[0].GetMasterVolume(out var level);
-            volumes[0].GetMute(out var mute);
-            result.Add(new AppVolume(pid, ResolveProcessName(pid), ResolveIconPng(pid), Math.Round(level * 100d), mute));
+            // Tear down session listeners
+            try { _sessionManager?.UnregisterSessionNotification(_sessionNotificationSink); } catch { }
+            ReleaseAllSessions();
+            Release(ref _sessionEnumerator);
+            Release(ref _sessionManager);
+
+            // Tear down endpoint
+            try { if (_endpoint is not null) _endpoint.UnregisterControlChangeNotify(_callbacks.EndpointCallback); } catch { }
+            Release(ref _endpoint);
+            Release(ref _device);
+
+            // Rebuild
+            ActivateDefaultDevice();
         }
-        return result.OrderBy(a => a.ProcessName, StringComparer.OrdinalIgnoreCase).ToList();
+        catch { /* best-effort */ }
+
+        Post(SessionsChanged);
+        NotifyMasterChanged();
     }
 
-    public void SetSessionVolume(int processId, double percent)
+    /// <summary>Public entry for device rebuild (marshals to MTA if needed).</summary>
+    internal void RebuildAll()
     {
-        ThrowIfDisposed();
-        var level = (float)(Math.Clamp(percent, 0, 100) / 100d);
-        if (_pidVolumes.TryGetValue(processId, out var volumes))
-            foreach (var volume in volumes)
-            {
-                var ctx = ComCtx.Empty;
-                try { volume.SetMasterVolume(level, ref ctx); } catch { }
-            }
+        if (_disposed) return;
+        if (Thread.CurrentThread == _dispatcher.MtaThread)
+            RebuildCore();
+        else
+            _dispatcher.Invoke(RebuildCore);
     }
 
-    public void SetSessionMute(int processId, bool mute)
-    {
-        ThrowIfDisposed();
-        if (_pidVolumes.TryGetValue(processId, out var volumes))
-            foreach (var volume in volumes)
-            {
-                var ctx = ComCtx.Empty;
-                try { volume.SetMute(mute, ref ctx); } catch { }
-            }
-    }
+    // ──────────────── Helpers ────────────────
 
     private static string ResolveProcessName(int pid)
     {
@@ -190,7 +292,7 @@ public sealed partial class AudioController : IAudioController
         catch { return null; }
     }
 
-    /// <summary>Reenvia evento na thread da UI (capturada no ctor).</summary>
+    /// <summary>Marshal event to UI thread (captured SynchronizationContext).</summary>
     private void Post(EventHandler? handler)
     {
         if (handler is null) return;
@@ -200,52 +302,51 @@ public sealed partial class AudioController : IAudioController
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
 
-    public void Dispose()
+    // ──────────────── COM release helpers ────────────────
+
+    private static void ReleaseControl(IAudioSessionControl? control)
     {
-        if (_disposed) return;
-        _disposed = true;
-        try { if (_endpoint is not null) _endpoint.UnregisterControlChangeNotify(_callbacks.EndpointCallback); } catch { }
-        try { _deviceEnumerator?.UnregisterEndpointNotificationCallback(_callbacks.DeviceNotifications); } catch { }
-        try { _sessionManager?.UnregisterSessionNotification(_sessionNotificationSink); } catch { }
-        ReleasePidVolumes();
-        Release(ref _sessionEnumerator);
-        Release(ref _sessionManager);
-        Release(ref _endpoint);
-        Release(ref _device);
-        Release(ref _deviceEnumerator);
-        GC.SuppressFinalize(this);
+        if (control is null) return;
+        try { _ = Marshal.ReleaseComObject(control); } catch { }
     }
 
-    private static void Release<T>(ref T? comObject) where T : class
+    private static void ReleaseComObject(object? comObject)
+    {
+        if (comObject is null) return;
+        try { _ = Marshal.ReleaseComObject(comObject); } catch { }
+    }
+
+    private void Release<T>(ref T? comObject) where T : class
     {
         if (comObject is null) return;
         try { _ = Marshal.ReleaseComObject(comObject); } catch { }
         comObject = null;
     }
 
-    partial void OnSessionsCacheInvalidated() => RefreshSessionCache();
-}
+    // ──────────────── Dispose (marshal cleanup to MTA) ────────────────
 
-public partial class AudioController
-{
-    internal void NotifyMasterChanged() => Post(MasterChanged);
-
-    internal void NotifySessionsChanged() => Post(SessionsChanged);
-
-    internal void RebuildAll()
+    public void Dispose()
     {
         if (_disposed) return;
-        try
-        {
-            try { if (_endpoint is not null) _endpoint.UnregisterControlChangeNotify(_callbacks.EndpointCallback); } catch { }
-            Release(ref _endpoint);
-            Release(ref _device);
-            ActivateDefaultDevice();
-            OnSessionsCacheInvalidated();
-            NotifyMasterChanged();
-        }
-        catch { Post(SessionsChanged); }
+        _disposed = true;
+
+        // Marshal all COM cleanup to the MTA thread that owns the objects.
+        _dispatcher.Invoke(DisposeComObjects);
+        _dispatcher.Dispose();
+        GC.SuppressFinalize(this);
     }
 
-    partial void OnSessionsCacheInvalidated(); // implementado na outra parte parcial
+    /// <summary>Runs on MTA thread — unregisters + releases every COM RCW.</summary>
+    private void DisposeComObjects()
+    {
+        try { _sessionManager?.UnregisterSessionNotification(_sessionNotificationSink); } catch { }
+        ReleaseAllSessions();
+        Release(ref _sessionEnumerator);
+        Release(ref _sessionManager);
+        try { if (_endpoint is not null) _endpoint.UnregisterControlChangeNotify(_callbacks.EndpointCallback); } catch { }
+        try { _deviceEnumerator?.UnregisterEndpointNotificationCallback(_callbacks.DeviceNotifications); } catch { }
+        Release(ref _endpoint);
+        Release(ref _device);
+        Release(ref _deviceEnumerator);
+    }
 }

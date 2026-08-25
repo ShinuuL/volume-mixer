@@ -114,7 +114,7 @@ internal interface IAudioSessionControl2
     void RegisterAudioSessionNotification(IAudioSessionEvents events);
     void UnregisterAudioSessionNotification(IAudioSessionEvents events);
     void GetProcessId(out uint processId);
-    void IsSystemSoundsSession();
+    [PreserveSig] int IsSystemSoundsSession();
     void SetDuckingPreference(bool optOut);
 }
 
@@ -171,10 +171,10 @@ internal static class AudioSessionState
 
 internal static class SessionControlExtensions
 {
-    /// <summary>IsSystemSoundsSession retorna HRESULT; alguns hosts lançam — tratar como falso.</summary>
+    /// <summary>IsSystemSoundsSession retorna HRESULT: S_OK (0) = true, S_FALSE (1) = false.</summary>
     public static bool IsSystemSoundsSessionSafe(this IAudioSessionControl2 control)
     {
-        try { control.IsSystemSoundsSession(); return true; }
-        catch (COMException) { return false; } // S_FALSE chega como exceção → não é som do sistema
+        try { return control.IsSystemSoundsSession() == 0; }
+        catch (COMException) { return false; }
     }
 }
