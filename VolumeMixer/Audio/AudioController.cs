@@ -70,7 +70,8 @@ public sealed partial class AudioController : IAudioController
         }
         catch
         {
-            // Alguns ambientes nao expoem o gerenciador de sessoes (E_NOINTERFACE em RDP etc.).
+            // Unregister if notification was registered but enumerator failed.
+            try { _sessionManager?.UnregisterSessionNotification(_sessionNotificationSink); } catch { }
             Release(ref _sessionEnumerator);
             Release(ref _sessionManager);
         }
@@ -173,6 +174,7 @@ public sealed partial class AudioController : IAudioController
         for (var i = 0; i < count; i++)
         {
             IAudioSessionControl? control = null;
+            ISimpleAudioVolume? volume = null;
             bool transferred = false;
             try
             {
@@ -185,7 +187,7 @@ public sealed partial class AudioController : IAudioController
                 var pid = (int)pidNative;
                 if (pid == 0 || control2.IsSystemSoundsSessionSafe()) continue;
 
-                var volume = (ISimpleAudioVolume)control;
+                volume = (ISimpleAudioVolume)control;
                 var sink = new SessionEventSink(this);
                 control.RegisterAudioSessionNotification(sink);
 
@@ -197,9 +199,12 @@ public sealed partial class AudioController : IAudioController
             catch { /* session may die during enumeration */ }
             finally
             {
-                // Release locally-acquired control RCW on every skip / failure path.
+                // Release locally-acquired control + volume RCW on every skip / failure path.
                 if (!transferred)
+                {
                     ReleaseControl(control);
+                    if (volume is not null) ReleaseComObject(volume);
+                }
             }
         }
     }
@@ -219,11 +224,14 @@ public sealed partial class AudioController : IAudioController
 
     // ──────────────── Callbacks from COM (fire on MTA thread) ────────────────
 
-    /// <summary>Called by session sinks on MTA thread: refresh cache, then notify UI.</summary>
+    /// <summary>Called by session sinks: queues cache refresh + UI notification to the MTA dispatcher.</summary>
     internal void NotifySessionsChanged()
     {
-        RefreshSessionCache();
-        Post(SessionsChanged);
+        _dispatcher.Post(() =>
+        {
+            RefreshSessionCache();
+            Post(SessionsChanged);
+        });
     }
 
     /// <summary>Called by endpoint/device callbacks on MTA thread: just post to UI.</summary>

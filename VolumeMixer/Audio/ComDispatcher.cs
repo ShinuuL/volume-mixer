@@ -26,10 +26,16 @@ internal sealed class ComDispatcher : IDisposable
             action();
     }
 
-    /// <summary>Marshal a function to the MTA thread and return the result synchronously.</summary>
+    /// <summary>Marshal a function to the MTA thread and return the result synchronously.
+    /// If already on the MTA thread, executes inline to avoid self-deadlock.</summary>
     public T Invoke<T>(Func<T> func)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(ComDispatcher));
+
+        // Fast path: reentrant call from the MTA thread itself — execute inline.
+        if (Thread.CurrentThread == _thread)
+            return func();
+
         T? result = default;
         Exception? error = null;
         var done = new ManualResetEventSlim(false);
@@ -45,10 +51,19 @@ internal sealed class ComDispatcher : IDisposable
         return result!;
     }
 
-    /// <summary>Marshal an action to the MTA thread and block until complete.</summary>
+    /// <summary>Marshal an action to the MTA thread and block until complete.
+    /// If already on the MTA thread, executes inline to avoid self-deadlock.</summary>
     public void Invoke(Action action)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(ComDispatcher));
+
+        // Fast path: reentrant call from the MTA thread itself — execute inline.
+        if (Thread.CurrentThread == _thread)
+        {
+            action();
+            return;
+        }
+
         Exception? error = null;
         var done = new ManualResetEventSlim(false);
         _queue.Add(() =>
@@ -62,11 +77,12 @@ internal sealed class ComDispatcher : IDisposable
         if (error is not null) throw error;
     }
 
-    /// <summary>Fire-and-forget on MTA thread.</summary>
+    /// <summary>Fire-and-forget on MTA thread. Silently ignored after Dispose.</summary>
     public void Post(Action action)
     {
         if (_disposed) return;
-        _queue.Add(action);
+        try { _queue.Add(action); }
+        catch (InvalidOperationException) { }
     }
 
     public void Dispose()

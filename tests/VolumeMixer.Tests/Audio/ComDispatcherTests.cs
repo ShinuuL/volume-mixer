@@ -135,4 +135,59 @@ public class ComDispatcherTests
         Assert.True(threadFromDispatcher.IsBackground);
         Assert.Equal("CoreAudio-MTA", threadFromDispatcher.Name);
     }
+
+    // ── Finding 3: reentrant Invoke (on-owner-thread fast path) ──
+
+    [Fact]
+    public void Invoke_reentrante_Func_na_MTA_executa_inline_sem_deadlock()
+    {
+        using var dispatcher = new ComDispatcher();
+        // Execute on MTA thread to prove nested Invoke works via fast path
+        var result = dispatcher.Invoke(() => dispatcher.Invoke(() => 99));
+        Assert.Equal(99, result);
+    }
+
+    [Fact]
+    public void Invoke_reentrante_Action_na_MTA_executa_inline_sem_deadlock()
+    {
+        using var dispatcher = new ComDispatcher();
+        dispatcher.Invoke(() =>
+        {
+            // Nested Action Invoke — must not deadlock
+            dispatcher.Invoke(() => { });
+        });
+        // If we reach here without timeout, the fast path works
+        Assert.True(true);
+    }
+
+    [Fact]
+    public void Invoke_reentrante_excecao_se_propaga_corretamente()
+    {
+        using var dispatcher = new ComDispatcher();
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            dispatcher.Invoke(() =>
+                dispatcher.Invoke(() => throw new InvalidOperationException("reentrant"))));
+        Assert.Equal("reentrant", ex.Message);
+    }
+
+    // ── Finding 4: Post vs Dispose race safety ──
+
+    [Fact]
+    public async Task Post_concurrent_com_Dispose_nao_lanca()
+    {
+        var dispatcher = new ComDispatcher();
+        var exceptionSeen = false;
+        var tasks = Enumerable.Range(0, 100).Select(_ => Task.Run(() =>
+        {
+            for (var j = 0; j < 10; j++)
+            {
+                try { dispatcher.Post(() => { }); }
+                catch { exceptionSeen = true; }
+            }
+        })).ToArray();
+        // Dispose while posts are happening
+        dispatcher.Dispose();
+        await Task.WhenAll(tasks);
+        Assert.False(exceptionSeen);
+    }
 }
