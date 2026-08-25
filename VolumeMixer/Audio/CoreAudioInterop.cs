@@ -84,3 +84,97 @@ internal struct AudioVolumeNotificationData
     public uint Channels;
     public IntPtr ChannelVolumes; // float[] com Channels elementos
 }
+
+/// <summary>vtable completa de IAudioSessionControl (9 slots) — ordem obrigatória.</summary>
+[ComImport, Guid("F4B1A599-7266-4319-A8CA-E70ACB11E8CD"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionControl
+{
+    void GetState(out int state); // 0=Inactive 1=Active 2=Expired
+    void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+    void SetDisplayName(string name, ref Guid eventContext);
+    void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);
+    void SetIconPath(string path, ref Guid eventContext);
+    void GetGroupingParam(out Guid groupingId);
+    void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);
+    void RegisterAudioSessionNotification(IAudioSessionEvents events);
+    void UnregisterAudioSessionNotification(IAudioSessionEvents events);
+}
+
+/// <summary>Extensão: mesmos 9 slots + 3 próprios, numa única declaração (QI direto).</summary>
+[ComImport, Guid("bfb7ff88-7239-4fc9-8fa2-07c950be9c6d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionControl2
+{
+    void GetState(out int state);
+    void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);
+    void SetDisplayName(string name, ref Guid eventContext);
+    void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);
+    void SetIconPath(string path, ref Guid eventContext);
+    void GetGroupingParam(out Guid groupingId);
+    void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);
+    void RegisterAudioSessionNotification(IAudioSessionEvents events);
+    void UnregisterAudioSessionNotification(IAudioSessionEvents events);
+    void GetProcessId(out uint processId);
+    void IsSystemSoundsSession();
+    void SetDuckingPreference(bool optOut);
+}
+
+[ComImport, Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface ISimpleAudioVolume
+{
+    void SetMasterVolume(float level, ref Guid eventContext);
+    void GetMasterVolume(out float level);
+    void SetMute(bool mute, ref Guid eventContext);
+    void GetMute(out bool mute);
+}
+
+/// <summary>vtable completa (5 slots) — ordem obrigatória.</summary>
+[ComImport, Guid("24918ACC-64B3-37C1-8CA9-74A66E9957A8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionEvents
+{
+    void OnDisplayNameChanged(string displayName, ref Guid eventContext);
+    void OnIconPathChanged(string iconPath, ref Guid eventContext);
+    void OnVolumeChanged(float newVolume, bool newMute, ref Guid eventContext);
+    void OnStateChanged(int newState);
+    void OnSessionDisconnected(int disconnectReason);
+}
+
+[ComImport, Guid("67598B03-F5E7-4AFB-80EC-EAAF029EF668"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionNotification
+{
+    void OnSessionCreated(IAudioSessionControl newSession);
+}
+
+/// <summary>vtable: 2 herdados de IAudioSessionManager + 3 próprios — ordem obrigatória.</summary>
+[ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A37B6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionManager2
+{
+    void GetAudioSessionControl(IntPtr sessionGuid, int flags, out IAudioSessionControl control); // slot herdado
+    void GetSimpleAudioVolume(IntPtr sessionGuid, int flags, out ISimpleAudioVolume volume);      // slot herdado
+    void GetSessionEnumerator(out IAudioSessionEnumerator enumerator);
+    void RegisterSessionNotification(IAudioSessionNotification notification);
+    void UnregisterSessionNotification(IAudioSessionNotification notification);
+}
+
+[ComImport, Guid("E2F5BB11-0570-40CA-ACDD-3AA01277DEE8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioSessionEnumerator
+{
+    void GetCount(out int sessionCount);
+    void GetSession(int index, out IAudioSessionControl session);
+}
+
+internal static class AudioSessionState
+{
+    internal const int Inactive = 0;
+    internal const int Active = 1;
+    internal const int Expired = 2;
+}
+
+internal static class SessionControlExtensions
+{
+    /// <summary>IsSystemSoundsSession retorna HRESULT; alguns hosts lançam — tratar como falso.</summary>
+    public static bool IsSystemSoundsSessionSafe(this IAudioSessionControl2 control)
+    {
+        try { control.IsSystemSoundsSession(); return true; }
+        catch (COMException) { return false; } // S_FALSE chega como exceção → não é som do sistema
+    }
+}
