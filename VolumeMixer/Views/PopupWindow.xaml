@@ -1,0 +1,10 @@
+<Window x:Class="VolumeMixer.Views.PopupWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Volume Mixer" Width="360" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ShowInTaskbar="False" Topmost="True">
+  <Border Background="#F3F3F3" CornerRadius="8" Padding="12">
+    <TextBlock Text="Popup placeholder" />
+  </Border>
+</Window>
