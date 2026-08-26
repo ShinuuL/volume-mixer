@@ -65,8 +65,8 @@ internal interface IAudioEndpointVolume
     void SetChannelVolumeLevelScalar(uint channel, float level, ref Guid eventContext);
     void GetChannelVolumeLevel(uint channel, out float levelDb);
     void GetChannelVolumeLevelScalar(uint channel, out float level);
-    void SetMute(bool mute, ref Guid eventContext);
-    void GetMute(out bool mute);
+    void SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, IntPtr eventContext);
+    void GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
 }
 
 [ComImport, Guid("656805A6-2B99-47A9-AF53-D7CE973A0E4C"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -89,33 +89,35 @@ internal struct AudioVolumeNotificationData
 [ComImport, Guid("F4B1A599-7266-4319-A8CA-E70ACB11E8CD"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionControl
 {
-    void GetState(out int state); // 0=Inactive 1=Active 2=Expired
-    void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);
-    void SetDisplayName(string name, ref Guid eventContext);
-    void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);
-    void SetIconPath(string path, ref Guid eventContext);
-    void GetGroupingParam(out Guid groupingId);
-    void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);
-    void RegisterAudioSessionNotification(IAudioSessionEvents events);
-    void UnregisterAudioSessionNotification(IAudioSessionEvents events);
+    void GetState(out int state);                                                // slot 3
+    void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);     // slot 4
+    void SetDisplayName(string name, ref Guid eventContext);                     // slot 5
+    void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);        // slot 6
+    void SetIconPath(string path, ref Guid eventContext);                        // slot 7
+    void GetGroupingParam(out Guid groupingId);                                  // slot 8
+    void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);           // slot 9
+    void RegisterAudioSessionNotification(IAudioSessionEvents events);           // slot 10
+    void UnregisterAudioSessionNotification(IAudioSessionEvents events);         // slot 11
 }
 
-/// <summary>Extensão: mesmos 9 slots + 3 próprios, numa única declaração (QI direto).</summary>
+/// <summary>vtable completa de IAudioSessionControl2 — 9 slots de IAudioSessionControl + 5 próprios.</summary>
 [ComImport, Guid("bfb7ff88-7239-4fc9-8fa2-07c950be9c6d"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionControl2
 {
-    void GetState(out int state);
-    void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);
-    void SetDisplayName(string name, ref Guid eventContext);
-    void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);
-    void SetIconPath(string path, ref Guid eventContext);
-    void GetGroupingParam(out Guid groupingId);
-    void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);
-    void RegisterAudioSessionNotification(IAudioSessionEvents events);
-    void UnregisterAudioSessionNotification(IAudioSessionEvents events);
-    void GetProcessId(out uint processId);
-    [PreserveSig] int IsSystemSoundsSession();
-    void SetDuckingPreference(bool optOut);
+    void GetState(out int state);                                                // slot 3
+    void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);     // slot 4
+    void SetDisplayName(string name, ref Guid eventContext);                     // slot 5
+    void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);        // slot 6
+    void SetIconPath(string path, ref Guid eventContext);                        // slot 7
+    void GetGroupingParam(out Guid groupingId);                                  // slot 8
+    void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);           // slot 9
+    void RegisterAudioSessionNotification(IAudioSessionEvents events);           // slot 10
+    void UnregisterAudioSessionNotification(IAudioSessionEvents events);         // slot 11
+    void GetSessionIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string id); // slot 12
+    void GetSessionInstanceIdentifier([MarshalAs(UnmanagedType.LPWStr)] out string id); // slot 13
+    void GetProcessId(out uint processId);                                       // slot 14
+    [PreserveSig] int IsSystemSoundsSession();                                   // slot 15
+    void SetDuckingPreference([MarshalAs(UnmanagedType.Bool)] bool optOut);      // slot 16
 }
 
 [ComImport, Guid("87CE5498-68D6-44E5-9215-6DA47EF883D8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -123,8 +125,8 @@ internal interface ISimpleAudioVolume
 {
     void SetMasterVolume(float level, ref Guid eventContext);
     void GetMasterVolume(out float level);
-    void SetMute(bool mute, ref Guid eventContext);
-    void GetMute(out bool mute);
+    void SetMute([MarshalAs(UnmanagedType.Bool)] bool mute, IntPtr eventContext);
+    void GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
 }
 
 /// <summary>vtable completa (5 slots) — ordem obrigatória.</summary>
@@ -145,7 +147,7 @@ internal interface IAudioSessionNotification
 }
 
 /// <summary>vtable: 2 herdados de IAudioSessionManager + 3 próprios — ordem obrigatória.</summary>
-[ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A37B6"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+[ComImport, Guid("77AA99A0-1BD6-484F-8BC7-2C654C9A9B6F"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionManager2
 {
     void GetAudioSessionControl(IntPtr sessionGuid, int flags, out IAudioSessionControl control); // slot herdado
