@@ -3,8 +3,91 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Volume Mixer" Width="360" SizeToContent="Height"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
-        ShowInTaskbar="False" Topmost="True">
-  <Border Background="#F3F3F3" CornerRadius="8" Padding="12">
-    <TextBlock Text="Popup placeholder" />
+        ShowInTaskbar="False" Topmost="True"
+        Deactivated="OnDeactivated" PreviewKeyDown="OnPreviewKeyDown"
+        Loaded="OnLoaded" ContentRendered="OnContentRenderedFirstTime">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Styles.xaml" />
+      </ResourceDictionary.MergedDictionaries>
+
+      <!-- Template da linha MASTER -->
+      <DataTemplate x:Key="MasterTemplate">
+        <Border Style="{StaticResource RowBorder}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="&#x1F50A;" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBlock Grid.Column="1" Text="Master" Style="{StaticResource PanelText}" FontWeight="SemiBold"
+                       Margin="0,0,150,0" />
+            <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}"
+                    HorizontalAlignment="Right" Maximum="100"
+                    Value="{Binding VolumePercent, Mode=TwoWay}" />
+            <TextBox Grid.Column="2" Style="{StaticResource VolumeBox}"
+                     Text="{Binding VolumeText, UpdateSourceTrigger=PropertyChanged}"
+                     PreviewTextInput="OnDigitsOnly"
+                     KeyDown="OnVolumeBoxKeyDown" LostFocus="OnVolumeBoxLostFocus" />
+            <Button Grid.Column="3" Style="{StaticResource MuteButton}" Command="{Binding ToggleMute}" />
+          </Grid>
+        </Border>
+      </DataTemplate>
+
+      <!-- Template da linha de APP -->
+      <DataTemplate x:Key="AppTemplate">
+        <Border Style="{StaticResource RowBorder}">
+          <Grid>
+            <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <Image Grid.Column="0" Style="{StaticResource AppIcon}"
+                   Source="{Binding Icon}" Stretch="Uniform" />
+            <TextBlock Grid.Column="1" Text="{Binding ProcessName}" Style="{StaticResource PanelText}"
+                       TextTrimming="CharacterEllipsis" Margin="0,0,150,0" />
+            <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}"
+                    HorizontalAlignment="Right" Maximum="100"
+                    Value="{Binding VolumePercent, Mode=TwoWay}" />
+            <TextBox Grid.Column="2" Style="{StaticResource VolumeBox}"
+                     Text="{Binding VolumeText, UpdateSourceTrigger=PropertyChanged}"
+                     PreviewTextInput="OnDigitsOnly"
+                     KeyDown="OnVolumeBoxKeyDown" LostFocus="OnVolumeBoxLostFocus" />
+            <Button Grid.Column="3" Style="{StaticResource MuteButton}" Command="{Binding ToggleMute}" />
+          </Grid>
+        </Border>
+      </DataTemplate>
+    </ResourceDictionary>
+  </Window.Resources>
+
+  <Border Style="{StaticResource PanelBorder}">
+    <StackPanel>
+      <ContentControl Content="{Binding Master}" ContentTemplate="{StaticResource MasterTemplate}" />
+
+      <!-- Spec 7: falha total da listagem - painel mantem master + aviso. -->
+      <Border Background="#FFF0E0" CornerRadius="6" Padding="8" Margin="0,0,0,4">
+        <Border.Style>
+          <Style TargetType="Border">
+            <Setter Property="Visibility" Value="Visible" />
+            <Style.Triggers>
+              <DataTrigger Binding="{Binding AppsError}" Value="{x:Null}">
+                <Setter Property="Visibility" Value="Collapsed" />
+              </DataTrigger>
+              <DataTrigger Binding="{Binding AppsError}" Value="">
+                <Setter Property="Visibility" Value="Collapsed" />
+              </DataTrigger>
+            </Style.Triggers>
+          </Style>
+        </Border.Style>
+        <TextBlock Text="{Binding AppsError}"
+                   Foreground="#B85C00" FontWeight="SemiBold" TextWrapping="Wrap" />
+      </Border>
+
+      <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
+        <ItemsControl ItemsSource="{Binding Apps}"
+                      ItemTemplate="{StaticResource AppTemplate}" />
+      </ScrollViewer>
+    </StackPanel>
   </Border>
 </Window>
