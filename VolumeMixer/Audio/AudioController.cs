@@ -204,15 +204,28 @@ public sealed partial class AudioController : IAudioController
 
     private void RefreshSessionCache()
     {
-        ReleaseAllSessions();
         if (_sessionEnumerator is null)
         {
             Diag.Info("[DIAG] RefreshSessionCache: _sessionEnumerator é NULL, retornando");
             return;
         }
 
-        _sessionEnumerator.GetCount(out var count);
+        int count;
+        try
+        {
+            _sessionEnumerator.GetCount(out count);
+        }
+        catch (Exception ex)
+        {
+            // Se o enumerator falhar (ex: dispositivo removido), preserva o cache
+            // anterior em vez de deixá-lo vazio.
+            Diag.Error("[DIAG] RefreshSessionCache: GetCount falhou, preservando cache", ex);
+            return;
+        }
         Diag.Info($"[DIAG] RefreshSessionCache: enumerator retornou {count} sessões");
+
+        // Só libera o cache antigo depois de confirmar que a re-enumeração é viável.
+        ReleaseAllSessions();
         var addedCount = 0;
         for (var i = 0; i < count; i++)
         {

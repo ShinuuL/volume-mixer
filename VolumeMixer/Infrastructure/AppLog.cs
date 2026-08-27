@@ -7,6 +7,9 @@ public sealed class AppLog
     private readonly string _directory;
     private static readonly object Gate = new();
 
+    /// <summary>Singleton compartilhado para logging de qualquer thread (ex: MTA).</summary>
+    public static AppLog Instance { get; } = new();
+
     public AppLog(string? directory = null)
         => _directory = directory
            ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),

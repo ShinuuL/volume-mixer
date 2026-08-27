@@ -23,7 +23,21 @@ internal sealed class ComDispatcher : IDisposable
     private void Run()
     {
         foreach (var action in _queue.GetConsumingEnumerable())
-            action();
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                // Nunca deixe uma exceção matar o loop da thread MTA. Se um
+                // callback COM (ex: RefreshSessionCache) lançar, registramos e
+                // continuamos — caso contrário o processo congela/morre em
+                // silêncio e novos apps de áudio deixam de ser detectados.
+                try { VolumeMixer.Infrastructure.AppLog.Instance.Error("exceção não capturada na thread MTA", ex); }
+                catch { /* logging must never crash the loop */ }
+            }
+        }
     }
 
     /// <summary>Marshal a function to the MTA thread and return the result synchronously.

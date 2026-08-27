@@ -42,7 +42,7 @@
         <Setter Property="Margin" Value="0,0,10,0" />
     </Style>
 
-    <!-- Slider com acento do tema -->
+    <!-- Slider com acento do tema (thumb + track preenchido) -->
     <Style x:Key="VolumeSlider" TargetType="Slider">
         <Setter Property="Minimum" Value="0" />
         <Setter Property="Maximum" Value="100" />
@@ -50,6 +50,54 @@
         <Setter Property="Width" Value="140" />
         <Setter Property="Margin" Value="0,0,8,0" />
         <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid VerticalAlignment="Center">
+                        <Track x:Name="PART_Track" Height="4">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="Slider.DecreaseLarge"
+                                              Focusable="False"
+                                              Background="{DynamicResource AccentBrush}"
+                                              BorderThickness="0">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    CornerRadius="2" />
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="Slider.IncreaseLarge"
+                                              Focusable="False"
+                                              Background="{DynamicResource SliderTrackBrush}"
+                                              BorderThickness="0">
+                                    <RepeatButton.Template>
+                                        <ControlTemplate TargetType="RepeatButton">
+                                            <Border Background="{TemplateBinding Background}"
+                                                    CornerRadius="2" />
+                                        </ControlTemplate>
+                                    </RepeatButton.Template>
+                                </RepeatButton>
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Focusable="False">
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Ellipse Width="14" Height="14"
+                                                     Fill="{DynamicResource AccentBrush}"
+                                                     Stroke="{DynamicResource PanelBrush}"
+                                                     StrokeThickness="2" />
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <Style x:Key="VolumeBox" TargetType="TextBox">
@@ -78,9 +126,11 @@
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Opacity" Value="0.35" />
+        <Setter Property="Foreground" Value="{DynamicResource ForegroundBrush}" />
         <Style.Triggers>
             <DataTrigger Binding="{Binding IsMuted}" Value="True">
                 <Setter Property="Opacity" Value="1" />
+                <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
             </DataTrigger>
             <Trigger Property="IsMouseOver" Value="True">
                 <Setter Property="Opacity" Value="0.8" />

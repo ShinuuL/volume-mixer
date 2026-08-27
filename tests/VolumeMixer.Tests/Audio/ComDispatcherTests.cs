@@ -126,6 +126,22 @@ public class ComDispatcherTests
     }
 
     [Fact]
+    public void Post_com_excecao_nao_mata_a_thread_MTA()
+    {
+        // Regressão: uma exceção não capturada em uma ação Post (ex: callback COM
+        // RefreshSessionCache) NÃO pode matar o loop da thread MTA. Antes da
+        // correção, o Run() sem try/catch deixava a thread morrer em silêncio,
+        // congelando o app e impedindo a detecção de novos apps de áudio.
+        using var dispatcher = new ComDispatcher();
+        dispatcher.Post(() => throw new InvalidOperationException("erro no callback"));
+
+        // A thread deve continuar viva e processar a próxima ação normalmente.
+        var result = dispatcher.Invoke(() => 42);
+        Assert.Equal(42, result);
+        Assert.True(dispatcher.MtaThread.IsAlive);
+    }
+
+    [Fact]
     public void MtaThread_property_retorna_a_thread_correta()
     {
         using var dispatcher = new ComDispatcher();
