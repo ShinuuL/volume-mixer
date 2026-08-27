@@ -53,48 +53,53 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Slider">
-                    <Grid VerticalAlignment="Center">
-                        <Track x:Name="PART_Track" Height="4">
-                            <Track.DecreaseRepeatButton>
-                                <RepeatButton Command="Slider.DecreaseLarge"
-                                              Focusable="False"
-                                              Background="{DynamicResource AccentBrush}"
-                                              BorderThickness="0">
-                                    <RepeatButton.Template>
-                                        <ControlTemplate TargetType="RepeatButton">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="2" />
-                                        </ControlTemplate>
-                                    </RepeatButton.Template>
-                                </RepeatButton>
-                            </Track.DecreaseRepeatButton>
-                            <Track.IncreaseRepeatButton>
-                                <RepeatButton Command="Slider.IncreaseLarge"
-                                              Focusable="False"
-                                              Background="{DynamicResource SliderTrackBrush}"
-                                              BorderThickness="0">
-                                    <RepeatButton.Template>
-                                        <ControlTemplate TargetType="RepeatButton">
-                                            <Border Background="{TemplateBinding Background}"
-                                                    CornerRadius="2" />
-                                        </ControlTemplate>
-                                    </RepeatButton.Template>
-                                </RepeatButton>
-                            </Track.IncreaseRepeatButton>
-                            <Track.Thumb>
-                                <Thumb Focusable="False">
-                                    <Thumb.Template>
-                                        <ControlTemplate TargetType="Thumb">
-                                            <Ellipse Width="14" Height="14"
-                                                     Fill="{DynamicResource AccentBrush}"
-                                                     Stroke="{DynamicResource PanelBrush}"
-                                                     StrokeThickness="2" />
-                                        </ControlTemplate>
-                                    </Thumb.Template>
-                                </Thumb>
-                            </Track.Thumb>
-                        </Track>
-                    </Grid>
+                    <!-- Track com altura suficiente para o thumb (14px) sem
+                         transbordar do card. A linha visual (repeat buttons)
+                         fica centralizada verticalmente dentro do Track. -->
+                    <Track x:Name="PART_Track" Height="18" VerticalAlignment="Center">
+                        <Track.DecreaseRepeatButton>
+                            <RepeatButton Command="Slider.DecreaseLarge"
+                                          Focusable="False"
+                                          Background="{DynamicResource AccentBrush}"
+                                          BorderThickness="0"
+                                          VerticalAlignment="Center"
+                                          Height="4">
+                                <RepeatButton.Template>
+                                    <ControlTemplate TargetType="RepeatButton">
+                                        <Border Background="{TemplateBinding Background}"
+                                                CornerRadius="2" />
+                                    </ControlTemplate>
+                                </RepeatButton.Template>
+                            </RepeatButton>
+                        </Track.DecreaseRepeatButton>
+                        <Track.IncreaseRepeatButton>
+                            <RepeatButton Command="Slider.IncreaseLarge"
+                                          Focusable="False"
+                                          Background="{DynamicResource SliderTrackBrush}"
+                                          BorderThickness="0"
+                                          VerticalAlignment="Center"
+                                          Height="4">
+                                <RepeatButton.Template>
+                                    <ControlTemplate TargetType="RepeatButton">
+                                        <Border Background="{TemplateBinding Background}"
+                                                CornerRadius="2" />
+                                    </ControlTemplate>
+                                </RepeatButton.Template>
+                            </RepeatButton>
+                        </Track.IncreaseRepeatButton>
+                        <Track.Thumb>
+                            <Thumb Focusable="False">
+                                <Thumb.Template>
+                                    <ControlTemplate TargetType="Thumb">
+                                        <Ellipse Width="14" Height="14"
+                                                 Fill="{DynamicResource AccentBrush}"
+                                                 Stroke="{DynamicResource PanelBrush}"
+                                                 StrokeThickness="2" />
+                                    </ControlTemplate>
+                                </Thumb.Template>
+                            </Thumb>
+                        </Track.Thumb>
+                    </Track>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
