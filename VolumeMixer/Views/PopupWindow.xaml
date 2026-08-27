@@ -1,7 +1,7 @@
 <Window x:Class="VolumeMixer.Views.PopupWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Volume Mixer" Width="360" SizeToContent="Height"
+        Title="Volume Mixer" Width="380" SizeToContent="Height"
         WindowStyle="None" AllowsTransparency="True" Background="Transparent"
         ShowInTaskbar="False" Topmost="True"
         Deactivated="OnDeactivated" PreviewKeyDown="OnPreviewKeyDown"
@@ -17,20 +17,23 @@
         <Border Style="{StaticResource RowBorder}">
           <Grid>
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="&#x1F50A;" FontSize="16" VerticalAlignment="Center" Margin="0,0,8,0" />
+            <TextBlock Grid.Column="0" Text="&#x1F50A;" FontSize="18" VerticalAlignment="Center" Margin="0,0,10,0" />
             <TextBlock Grid.Column="1" Text="Master" Style="{StaticResource PanelText}" FontWeight="SemiBold"
-                       Margin="0,0,150,0" />
-            <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}"
+                       Margin="0,0,0,0" />
+            <Slider Grid.Column="2" Style="{StaticResource VolumeSlider}"
                     HorizontalAlignment="Right" Maximum="100"
                     Value="{Binding VolumePercent, Mode=TwoWay}" />
-            <TextBox Grid.Column="2" Style="{StaticResource VolumeBox}"
+            <TextBox Grid.Column="3" Style="{StaticResource VolumeBox}"
                      Text="{Binding VolumeText, UpdateSourceTrigger=PropertyChanged}"
                      PreviewTextInput="OnDigitsOnly"
                      KeyDown="OnVolumeBoxKeyDown" LostFocus="OnVolumeBoxLostFocus" />
-            <Button Grid.Column="3" Style="{StaticResource MuteButton}" Command="{Binding ToggleMute}" />
+            <Button Grid.Column="4" Style="{StaticResource MuteButton}" Command="{Binding ToggleMute}" />
           </Grid>
         </Border>
       </DataTemplate>
@@ -40,33 +43,43 @@
         <Border Style="{StaticResource RowBorder}">
           <Grid>
             <Grid.ColumnDefinitions>
-              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="*" />
-              <ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" /><ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="*" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
+              <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <Image Grid.Column="0" Style="{StaticResource AppIcon}"
                    Source="{Binding Icon}" Stretch="Uniform" />
             <TextBlock Grid.Column="1" Text="{Binding ProcessName}" Style="{StaticResource PanelText}"
-                       TextTrimming="CharacterEllipsis" Margin="0,0,150,0" />
-            <Slider Grid.Column="1" Style="{StaticResource VolumeSlider}"
+                       TextTrimming="CharacterEllipsis" Margin="0,0,0,0" />
+            <Slider Grid.Column="2" Style="{StaticResource VolumeSlider}"
                     HorizontalAlignment="Right" Maximum="100"
                     Value="{Binding VolumePercent, Mode=TwoWay}" />
-            <TextBox Grid.Column="2" Style="{StaticResource VolumeBox}"
+            <TextBox Grid.Column="3" Style="{StaticResource VolumeBox}"
                      Text="{Binding VolumeText, UpdateSourceTrigger=PropertyChanged}"
                      PreviewTextInput="OnDigitsOnly"
                      KeyDown="OnVolumeBoxKeyDown" LostFocus="OnVolumeBoxLostFocus" />
-            <Button Grid.Column="3" Style="{StaticResource MuteButton}" Command="{Binding ToggleMute}" />
+            <Button Grid.Column="4" Style="{StaticResource MuteButton}" Command="{Binding ToggleMute}" />
           </Grid>
         </Border>
       </DataTemplate>
     </ResourceDictionary>
   </Window.Resources>
 
-  <Border Style="{StaticResource PanelBorder}">
+  <Border x:Name="PanelBorder" Style="{StaticResource PanelBorder}"
+          Opacity="{Binding Settings.Transparency, FallbackValue=0.85}">
     <StackPanel>
+      <!-- Header -->
+      <DockPanel Margin="0,0,0,8">
+        <TextBlock Text="&#x1F50A;  Volume Mixer" Style="{StaticResource HeaderText}" />
+      </DockPanel>
+
       <ContentControl Content="{Binding Master}" ContentTemplate="{StaticResource MasterTemplate}" />
 
-      <!-- Spec 7: falha total da listagem - painel mantem master + aviso. -->
-      <Border Background="#FFF0E0" CornerRadius="6" Padding="8" Margin="0,0,0,4">
+      <!-- Spec 7: falha total da listagem -->
+      <Border CornerRadius="8" Padding="10" Margin="0,4,0,4"
+              Background="{DynamicResource ErrorBgBrush}">
         <Border.Style>
           <Style TargetType="Border">
             <Setter Property="Visibility" Value="Visible" />
@@ -81,10 +94,10 @@
           </Style>
         </Border.Style>
         <TextBlock Text="{Binding AppsError}"
-                   Foreground="#B85C00" FontWeight="SemiBold" TextWrapping="Wrap" />
+                   Foreground="{DynamicResource ErrorFgBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
       </Border>
 
-      <ScrollViewer MaxHeight="340" VerticalScrollBarVisibility="Auto">
+      <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
         <ItemsControl ItemsSource="{Binding Apps}"
                       ItemTemplate="{StaticResource AppTemplate}" />
       </ScrollViewer>

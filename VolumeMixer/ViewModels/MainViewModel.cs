@@ -11,6 +11,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
     public MasterViewModel Master { get; }
     public ObservableCollection<AppVolumeViewModel> Apps { get; } = new();
+    public AppSettings Settings { get; } = AppSettings.Load();
 
     private string? _appsError;
     public string? AppsError

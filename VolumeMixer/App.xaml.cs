@@ -22,6 +22,7 @@ public partial class App : Application
         {
             var audio = new AudioController();
             _viewModel = new MainViewModel(audio);
+            _viewModel.Settings.Apply();
             var startup = new StartupRegistry();
             _tray = new TrayService(_viewModel, () => new PopupWindow { DataContext = _viewModel }, startup);
             _tray.ClosingRequested += OnClosingRequested;
