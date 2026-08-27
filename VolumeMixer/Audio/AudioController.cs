@@ -13,7 +13,6 @@ public sealed partial class AudioController : IAudioController
     private readonly ComCallbacks _callbacks;
     private readonly ComDispatcher _dispatcher;
     private readonly SessionNotificationSink _sessionNotificationSink;
-    private static readonly AppLog Diag = new(); // temporário — diagnóstico
     private IMMDeviceEnumerator? _deviceEnumerator;
     private IMMDevice? _device;
     private IAudioEndpointVolume? _endpoint;
@@ -39,52 +38,41 @@ public sealed partial class AudioController : IAudioController
 
     public AudioController()
     {
-        Diag.Info("[DIAG] AudioController: construtor iniciado");
         _syncContext = SynchronizationContext.Current;
         _callbacks = new ComCallbacks(this);
         _sessionNotificationSink = new SessionNotificationSink(this);
         _dispatcher = new ComDispatcher();
-        Diag.Info("[DIAG] AudioController: ComDispatcher criado");
 
         // Marshal all COM object creation to the dedicated MTA thread.
         _dispatcher.Invoke(() =>
         {
-            Diag.Info("[DIAG] AudioController: Iniciando COM no MTA thread");
             _deviceEnumerator = (IMMDeviceEnumerator)new MMDeviceEnumeratorComObject();
             _deviceEnumerator.RegisterEndpointNotificationCallback(_callbacks.DeviceNotifications);
-            Diag.Info("[DIAG] AudioController: DeviceEnumerator criado, chamando ActivateDefaultDevice");
             ActivateDefaultDevice();
         });
-        Diag.Info("[DIAG] AudioController: construtor concluído");
     }
 
     /// <summary>Create device + endpoint + session manager + enumerator on current (MTA) thread.</summary>
     private void ActivateDefaultDevice()
     {
-        Diag.Info("[DIAG] ActivateDefaultDevice iniciado");
         _deviceEnumerator!.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out _device);
-        Diag.Info($"[DIAG] Device obtido: {_device is not null}");
 
         var iidEndpoint = typeof(IAudioEndpointVolume).GUID;
         _device!.Activate(ref iidEndpoint, ComCtx.ClsCtxAll, IntPtr.Zero, out var endpointObj);
         _endpoint = (IAudioEndpointVolume)endpointObj;
         _endpoint.RegisterControlChangeNotify(_callbacks.EndpointCallback);
-        Diag.Info("[DIAG] Endpoint criado e callback registrado");
 
         var iidManager = typeof(IAudioSessionManager2).GUID;
         try
         {
             _device!.Activate(ref iidManager, ComCtx.ClsCtxAll, IntPtr.Zero, out var managerObj);
             _sessionManager = (IAudioSessionManager2)managerObj;
-            Diag.Info("[DIAG] SessionManager criado");
             _sessionManager.RegisterSessionNotification(_sessionNotificationSink);
-            Diag.Info("[DIAG] SessionNotification registrado");
             _sessionManager.GetSessionEnumerator(out _sessionEnumerator);
-            Diag.Info($"[DIAG] SessionEnumerator criado: {_sessionEnumerator is not null}");
         }
         catch (Exception ex)
         {
-            Diag.Error("[DIAG] Falha ao criar session manager/enumerator", ex);
+            AppLog.Instance.Error("Falha ao criar session manager/enumerator", ex);
             // Unregister if notification was registered but enumerator failed.
             try { _sessionManager?.UnregisterSessionNotification(_sessionNotificationSink); } catch { }
             Release(ref _sessionEnumerator);
@@ -110,21 +98,16 @@ public sealed partial class AudioController : IAudioController
     {
         ThrowIfDisposed();
         var level = (float)(Math.Clamp(percent, 0, 100) / 100d);
-        Diag.Info($"[DIAG] SetMasterVolume: percent={percent}, level={level}");
         _dispatcher.Invoke(() =>
         {
             try
             {
                 var ctx = ComCtx.Empty;
                 _endpoint!.SetMasterVolumeLevelScalar(level, ref ctx);
-                Diag.Info($"[DIAG] SetMasterVolume: SetMasterVolumeLevelScalar OK");
-                // Ler de volta para confirmar
-                _endpoint.GetMasterVolumeLevelScalar(out var readBack);
-                Diag.Info($"[DIAG] SetMasterVolume: readBack={readBack}");
             }
             catch (Exception ex)
             {
-                Diag.Error("[DIAG] SetMasterVolume: EXCEÇÃO", ex);
+                AppLog.Instance.Error("SetMasterVolume falhou", ex);
             }
         });
     }
@@ -132,17 +115,15 @@ public sealed partial class AudioController : IAudioController
     public void SetMasterMute(bool mute)
     {
         ThrowIfDisposed();
-        Diag.Info($"[DIAG] SetMasterMute: mute={mute}");
         _dispatcher.Invoke(() =>
         {
             try
             {
                 _endpoint!.SetMute(mute, IntPtr.Zero);
-                Diag.Info($"[DIAG] SetMasterMute: OK");
             }
             catch (Exception ex)
             {
-                Diag.Error("[DIAG] SetMasterMute: EXCEÇÃO", ex);
+                AppLog.Instance.Error("SetMasterMute falhou", ex);
             }
         });
     }
@@ -152,7 +133,6 @@ public sealed partial class AudioController : IAudioController
         ThrowIfDisposed();
         return _dispatcher.Invoke(() =>
         {
-            Diag.Info($"[DIAG] GetSessions: {_sessions.Count} PIDs no cache");
             var result = new List<AppVolume>();
             foreach (var (pid, entries) in _sessions)
             {
@@ -162,11 +142,10 @@ public sealed partial class AudioController : IAudioController
                     entries[0].Volume.GetMasterVolume(out var level);
                     entries[0].Volume.GetMute(out var mute);
                     var name = ResolveProcessName(pid);
-                    Diag.Info($"[DIAG] GetSessions: PID={pid}, name={name}, level={level}, mute={mute}");
                     result.Add(new AppVolume(pid, name, ResolveIconPng(pid),
                         Math.Round(level * 100d), mute));
                 }
-                catch (Exception ex) { Diag.Error($"[DIAG] GetSessions: exceção PID={pid}", ex); }
+                catch (Exception ex) { AppLog.Instance.Error($"GetSessions: exceção PID={pid}", ex); }
             }
             return result.OrderBy(a => a.ProcessName, StringComparer.OrdinalIgnoreCase).ToList();
         });
@@ -206,7 +185,6 @@ public sealed partial class AudioController : IAudioController
     {
         if (_sessionEnumerator is null)
         {
-            Diag.Info("[DIAG] RefreshSessionCache: _sessionEnumerator é NULL, retornando");
             return;
         }
 
@@ -219,10 +197,9 @@ public sealed partial class AudioController : IAudioController
         {
             // Se o enumerator falhar (ex: dispositivo removido), preserva o cache
             // anterior em vez de deixá-lo vazio.
-            Diag.Error("[DIAG] RefreshSessionCache: GetCount falhou, preservando cache", ex);
+            AppLog.Instance.Error("RefreshSessionCache: GetCount falhou, preservando cache", ex);
             return;
         }
-        Diag.Info($"[DIAG] RefreshSessionCache: enumerator retornou {count} sessões");
 
         // Só libera o cache antigo depois de confirmar que a re-enumeração é viável.
         ReleaseAllSessions();
@@ -241,15 +218,13 @@ public sealed partial class AudioController : IAudioController
                 var pid = (int)pidNative;
                 if (pid > 1_000_000)
                 {
-                    Diag.Info($"[DIAG] Sessão {i}: PID suspeito {pid} (native={pidNative}), ignorando");
                     continue;
                 }
                 var name = ResolveProcessName(pid);
-                Diag.Info($"[DIAG] Sessão {i}: PID={pid}, state={state}, name={name}");
 
-                if (state == AudioSessionState.Expired) { Diag.Info($"[DIAG] Sessão {i}: filtrada (Expired)"); continue; }
+                if (state == AudioSessionState.Expired) { continue; }
                 // Filtro por PID: sessões de sistema sempre têm PID 0
-                if (pid == 0) { Diag.Info($"[DIAG] Sessão {i}: filtrada (PID=0)"); continue; }
+                if (pid == 0) { continue; }
 
                 volume = (ISimpleAudioVolume)control;
                 var sink = new SessionEventSink(this);
@@ -260,9 +235,8 @@ public sealed partial class AudioController : IAudioController
                 list.Add(new SessionEntry(control, sink, volume));
                 transferred = true;
                 addedCount++;
-                Diag.Info($"[DIAG] Sessão {i}: ADICIONADA (PID={pid}, name={name})");
             }
-            catch (Exception ex) { Diag.Error($"[DIAG] Sessão {i}: exceção - {ex.GetType().Name}: {ex.Message}", ex); }
+            catch (Exception ex) { AppLog.Instance.Error($"RefreshSessionCache: exceção na sessão {i}", ex); }
             finally
             {
                 if (!transferred)
@@ -272,7 +246,6 @@ public sealed partial class AudioController : IAudioController
                 }
             }
         }
-        Diag.Info($"[DIAG] RefreshSessionCache concluído: {addedCount} sessões adicionadas de {count} total, {_sessions.Count} PIDs no cache");
     }
 
     /// <summary>Unregister every sink, release every control + volume RCW, clear.</summary>
@@ -293,10 +266,8 @@ public sealed partial class AudioController : IAudioController
     /// <summary>Called by session sinks: queues cache refresh + UI notification to the MTA dispatcher.</summary>
     internal void NotifySessionsChanged()
     {
-        Diag.Info("[DIAG] NotifySessionsChanged chamado");
         _dispatcher.Post(() =>
         {
-            Diag.Info("[DIAG] NotifySessionsChanged: executando RefreshSessionCache no MTA");
             RefreshSessionCache();
             Post(SessionsChanged);
         });

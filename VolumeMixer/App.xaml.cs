@@ -18,6 +18,17 @@ public partial class App : Application
         base.OnStartup(e);
         DispatcherUnhandledException += OnDispatcherException;
 
+        // Captura exceções não-capturadas em threads de background (ex: MTA,
+        // Task) que, sem tratamento, derrubariam o processo em silêncio.
+        // Loga para diagnóstico em vez de deixar o app fechar sem rastro.
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+            _log.Error("exceção não capturada (AppDomain)", args.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, args) =>
+        {
+            _log.Error("exceção não observada em Task", args.Exception);
+            args.SetObserved();
+        };
+
         try
         {
             var audio = new AudioController();
