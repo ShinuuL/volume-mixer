@@ -65,6 +65,10 @@ internal static class CrashDiagnostics
     {
         // 1) Arquivo de log do crash nativo (aberto uma vez; o filtro usa WriteFile).
         var crashPath = Path.Combine(logDirectory, "native-crash.log");
+        // Garante que o diretório de logs existe antes do CreateFileW, evitando
+        // ERROR_PATH_NOT_FOUND (o diretório só era criado lazy pelo AppLog.Write,
+        // depois do Install).
+        try { Directory.CreateDirectory(logDirectory); } catch { }
         try
         {
             _logHandle = CreateFileW(crashPath, GenericWrite, 0, IntPtr.Zero, CreateAlways, FileAttributeNormal, IntPtr.Zero);

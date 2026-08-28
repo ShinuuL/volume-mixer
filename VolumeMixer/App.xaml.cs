@@ -37,6 +37,18 @@ public partial class App : Application
             args.SetObserved();
         };
 
+        // FirstChanceException captura TODAS as exceções gerenciadas (mesmo as
+        // tratadas) para revelar exceções repetidas antes de um crash nativo.
+        // Logado como INFO (não ERRO) para não poluir; pode gerar muitos logs de
+        // propósito durante o diagnóstico.
+        AppDomain.CurrentDomain.FirstChanceException += (_, args) =>
+            _log.Info($"exceção (first-chance): {args.Exception.GetType().Name}: {args.Exception.Message}");
+
+        // ProcessExit: registra quando o processo está saindo, distinguindo um
+        // crash (sem este log) de uma saída normal (menu / Shutdown).
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+            _log.Info("processo saindo (ProcessExit)");
+
         try
         {
             _log.Info("iniciando: criando AudioController");

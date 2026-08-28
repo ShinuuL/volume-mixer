@@ -146,6 +146,7 @@ public sealed partial class AudioController : IAudioController
                 if (entries[0].State != AudioSessionState.Active) continue;
                 try
                 {
+                    AppLog.Instance.Info($"GetSessions: lendo PID={pid}");
                     entries[0].Volume.GetMasterVolume(out var level);
                     entries[0].Volume.GetMute(out var mute);
                     var name = ResolveProcessName(pid);
@@ -221,6 +222,7 @@ public sealed partial class AudioController : IAudioController
             bool transferred = false;
             try
             {
+                AppLog.Instance.Info($"RefreshSessionCache: enumerando sessão {i}");
                 _sessionEnumerator.GetSession(i, out control);
                 var control2 = (IAudioSessionControl2)control;
                 control2.GetState(out var state);
@@ -349,17 +351,36 @@ public sealed partial class AudioController : IAudioController
             var process = Process.GetProcessById(pid);
             var exePath = process.MainModule?.FileName;
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return null;
-            return IconCacheByExe.GetOrAdd(exePath, static path =>
+            // Cache por exe path: a extração STA só roda uma vez por executável.
+            // "?? Array.Empty<byte>()" preserva a semântica original (ícone nulo →
+            // cache vazio) e mantém o retorno não-nulo para o ConcurrentDictionary.
+            return IconCacheByExe.GetOrAdd(exePath, static path => ExtractIconOnStaThread(path) ?? Array.Empty<byte>());
+        }
+        catch { return null; }
+    }
+
+    /// <summary>GDI+ não é thread-safe e é projetado para STA; extrai o ícone numa
+    /// thread STA dedicada para evitar crash nativo (access violation) na thread MTA.</summary>
+    private static byte[]? ExtractIconOnStaThread(string path)
+    {
+        byte[]? result = null;
+        var thread = new Thread(() =>
+        {
+            try
             {
                 using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
-                if (icon is null) return Array.Empty<byte>();
+                if (icon is null) return;
                 using var bitmap = icon.ToBitmap();
                 using var ms = new MemoryStream();
                 bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
-                return ms.ToArray();
-            });
-        }
-        catch { return null; }
+                result = ms.ToArray();
+            }
+            catch { /* ícone opcional; falha não derruba o app */ }
+        });
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+        thread.Join();
+        return result;
     }
 
     /// <summary>Marshal event to UI thread (captured SynchronizationContext).</summary>
