@@ -9,3 +9,6 @@ logs/
 *.key
 *.p12
 *.pfx
+
+# Artefatos internos de desenvolvimento (superpowers)
+.superpowers/
