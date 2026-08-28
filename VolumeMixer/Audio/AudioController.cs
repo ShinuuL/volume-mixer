@@ -22,15 +22,17 @@ public sealed partial class AudioController : IAudioController
     private static readonly ConcurrentDictionary<string, byte[]> IconCacheByExe = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
-    /// <summary>Tracks one audio session: control RCW (for unregister), sink, and volume RCW.</summary>
+    /// <summary>Tracks one audio session: control RCW (for unregister), sink, volume RCW, and current state.</summary>
     private sealed class SessionEntry(
         IAudioSessionControl Control,
         SessionEventSink Sink,
-        ISimpleAudioVolume Volume)
+        ISimpleAudioVolume Volume,
+        int State)
     {
         internal IAudioSessionControl Control { get; } = Control;
         internal SessionEventSink Sink { get; } = Sink;
         internal ISimpleAudioVolume Volume { get; } = Volume;
+        internal int State { get; } = State;
     }
 
     public event EventHandler? SessionsChanged;
@@ -137,6 +139,9 @@ public sealed partial class AudioController : IAudioController
             foreach (var (pid, entries) in _sessions)
             {
                 if (entries.Count == 0) continue;
+                // Sessões inativas permanecem no cache (sink registrado) para
+                // reaparecerem em tempo real; apenas a listagem filtra por Active.
+                if (entries[0].State != AudioSessionState.Active) continue;
                 try
                 {
                     entries[0].Volume.GetMasterVolume(out var level);
@@ -232,7 +237,7 @@ public sealed partial class AudioController : IAudioController
 
                 if (!_sessions.TryGetValue(pid, out var list))
                     _sessions[pid] = list = new List<SessionEntry>();
-                list.Add(new SessionEntry(control, sink, volume));
+                list.Add(new SessionEntry(control, sink, volume, state));
                 transferred = true;
                 addedCount++;
             }
