@@ -1,0 +1,15 @@
+# Configuracao de deploy deste projeto (deploy-base)
+[deploy]
+app         = "volume-mixer"        # id do app: minusculas, sem espacos; vira prefixo da tag
+repo        = "ShinuuL/Releases"    # repo privado que guarda as releases de todos os apps
+gateway     = "https://updates-gateway.sofaltaumaletr.workers.dev"  # URL publica do Worker
+channel     = "stable"              # stable | beta
+private_key = 'C:/chaves/deploy-base.pem'       # PEM de assinatura -- FORA do repo; aspas simples = caminho literal
+public_key  = "104c81a81b05108f914c50d091cd184a210eae57528e20298d8835344b740045" # hex (Ed25519, publica -- pode versionar)
+
+# EXE Windows single-file self-contained.
+[[artifact]]
+path     = "VolumeMixer/bin/publish/VolumeMixer.exe"
+platform = "windows"
+arch     = "x64"
+kind     = "exe"

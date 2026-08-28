@@ -3,3 +3,9 @@ obj/
 *.user
 *.log
 logs/
+
+# Chaves de assinatura (deploy-base) -- nunca versionar
+*.pem
+*.key
+*.p12
+*.pfx
