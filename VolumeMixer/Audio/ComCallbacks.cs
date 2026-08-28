@@ -1,5 +1,3 @@
-using System.Runtime.InteropServices;
-
 namespace VolumeMixer.Audio;
 
 /// <summary>Agrupa todos os callbacks COM; repassa ao controller via Post().</summary>
@@ -16,8 +14,11 @@ internal sealed class ComCallbacks :
 
     public void OnNotify(IntPtr notifyData)
     {
-        // O buffer é propriedade do Windows — apenas ler, nunca liberar.
-        try { Marshal.PtrToStructure<AudioVolumeNotificationData>(notifyData); } catch { }
+        // O buffer é propriedade do Windows — nunca ler/liberar. Apenas avisa
+        // que o volume master mudou; o controller lê o estado atual via GetMute/
+        // GetMasterVolumeLevelScalar. (Não fazemos Marshal.PtrToStructure aqui:
+        // o layout do AUDIO_VOLUME_NOTIFICATION_DATA com array variável é frágil
+        // e a leitura desnecessária era um risco de crash nativo.)
         _owner.NotifyMasterChanged();
     }
 

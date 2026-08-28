@@ -1,4 +1,5 @@
-﻿using System.Windows;
+﻿using System.IO;
+using System.Windows;
 using Application = System.Windows.Application;
 using VolumeMixer.Audio;
 using VolumeMixer.Infrastructure;
@@ -17,6 +18,13 @@ public partial class App : Application
     {
         base.OnStartup(e);
         DispatcherUnhandledException += OnDispatcherException;
+
+        // Diagnóstico de crash nativo (SEH) + heartbeat. O app morre em silêncio
+        // quando uma exceção nativa derruba o processo sem disparar os handlers
+        // gerenciados abaixo — este helper captura o crash e mede a vida do app.
+        CrashDiagnostics.Install(Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "VolumeMixer", "logs"));
 
         // Captura exceções não-capturadas em threads de background (ex: MTA,
         // Task) que, sem tratamento, derrubariam o processo em silêncio.

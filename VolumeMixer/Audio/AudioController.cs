@@ -266,15 +266,21 @@ public sealed partial class AudioController : IAudioController
     /// <summary>Called by session sinks: queues cache refresh + UI notification to the MTA dispatcher.</summary>
     internal void NotifySessionsChanged()
     {
+        if (_disposed) return;
         _dispatcher.Post(() =>
         {
+            if (_disposed) return;
             RefreshSessionCache();
             Post(SessionsChanged);
         });
     }
 
     /// <summary>Called by endpoint/device callbacks on MTA thread: just post to UI.</summary>
-    internal void NotifyMasterChanged() => Post(MasterChanged);
+    internal void NotifyMasterChanged()
+    {
+        if (_disposed) return;
+        Post(MasterChanged);
+    }
 
     /// <summary>Device-default-changed callback (already on MTA thread from COM).</summary>
     internal void RebuildCore()
@@ -329,7 +335,8 @@ public sealed partial class AudioController : IAudioController
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return null;
             return IconCacheByExe.GetOrAdd(exePath, static path =>
             {
-                using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path)!;
+                using var icon = System.Drawing.Icon.ExtractAssociatedIcon(path);
+                if (icon is null) return Array.Empty<byte>();
                 using var bitmap = icon.ToBitmap();
                 using var ms = new MemoryStream();
                 bitmap.Save(ms, System.Drawing.Imaging.ImageFormat.Png);
