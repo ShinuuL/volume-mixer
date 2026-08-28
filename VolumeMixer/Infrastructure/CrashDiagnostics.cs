@@ -14,7 +14,7 @@ namespace VolumeMixer.Infrastructure;
 ///     nativo (código + endereço) num arquivo separado.
 ///  2. Configura WER LocalDumps (HKCU) para gerar um minidump do processo no
 ///     crash, permitindo análise posterior.
-///  3. Inicia um heartbeat que registra a cada N minutos, para medir quanto
+///  3. Inicia um heartbeat que registra a cada 30 segundos, para medir quanto
 ///     tempo o app roda antes de morrer.
 /// </summary>
 internal static class CrashDiagnostics
@@ -82,10 +82,10 @@ internal static class CrashDiagnostics
         // 3) WER LocalDumps (HKCU — não exige admin).
         ConfigureWerLocalDumps();
 
-        // 4) Heartbeat: registra a cada 5 minutos para medir a vida do app.
+        // 4) Heartbeat: registra a cada 30 segundos para medir a vida do app.
         try
         {
-            _heartbeat = new DispatcherTimer { Interval = TimeSpan.FromMinutes(5) };
+            _heartbeat = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
             _heartbeat.Tick += (_, _) => AppLog.Instance.Info("heartbeat: app rodando");
             _heartbeat.Start();
         }

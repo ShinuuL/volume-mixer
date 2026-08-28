@@ -44,6 +44,7 @@ public sealed partial class AudioController : IAudioController
         _callbacks = new ComCallbacks(this);
         _sessionNotificationSink = new SessionNotificationSink(this);
         _dispatcher = new ComDispatcher();
+        AppLog.Instance.Info("AudioController criado");
 
         // Marshal all COM object creation to the dedicated MTA thread.
         _dispatcher.Invoke(() =>
@@ -71,6 +72,7 @@ public sealed partial class AudioController : IAudioController
             _sessionManager = (IAudioSessionManager2)managerObj;
             _sessionManager.RegisterSessionNotification(_sessionNotificationSink);
             _sessionManager.GetSessionEnumerator(out _sessionEnumerator);
+            AppLog.Instance.Info("dispositivo de áudio ativado");
         }
         catch (Exception ex)
         {
@@ -152,6 +154,7 @@ public sealed partial class AudioController : IAudioController
                 }
                 catch (Exception ex) { AppLog.Instance.Error($"GetSessions: exceção PID={pid}", ex); }
             }
+            AppLog.Instance.Info($"GetSessions: {result.Count} apps retornados");
             return result.OrderBy(a => a.ProcessName, StringComparer.OrdinalIgnoreCase).ToList();
         });
     }
@@ -206,6 +209,8 @@ public sealed partial class AudioController : IAudioController
             return;
         }
 
+        AppLog.Instance.Info($"RefreshSessionCache: {count} sessões no enumerator");
+
         // Só libera o cache antigo depois de confirmar que a re-enumeração é viável.
         ReleaseAllSessions();
         var addedCount = 0;
@@ -240,6 +245,7 @@ public sealed partial class AudioController : IAudioController
                 list.Add(new SessionEntry(control, sink, volume, state));
                 transferred = true;
                 addedCount++;
+                AppLog.Instance.Info($"  sessão: PID={pid} nome={name} estado={state}");
             }
             catch (Exception ex) { AppLog.Instance.Error($"RefreshSessionCache: exceção na sessão {i}", ex); }
             finally
@@ -251,6 +257,8 @@ public sealed partial class AudioController : IAudioController
                 }
             }
         }
+
+        AppLog.Instance.Info($"RefreshSessionCache: {addedCount} sessões ativas adicionadas");
     }
 
     /// <summary>Unregister every sink, release every control + volume RCW, clear.</summary>
@@ -272,6 +280,7 @@ public sealed partial class AudioController : IAudioController
     internal void NotifySessionsChanged()
     {
         if (_disposed) return;
+        AppLog.Instance.Info("callback: sessões mudaram");
         _dispatcher.Post(() =>
         {
             if (_disposed) return;
@@ -284,6 +293,7 @@ public sealed partial class AudioController : IAudioController
     internal void NotifyMasterChanged()
     {
         if (_disposed) return;
+        AppLog.Instance.Info("callback: volume master mudou");
         Post(MasterChanged);
     }
 
@@ -291,6 +301,7 @@ public sealed partial class AudioController : IAudioController
     internal void RebuildCore()
     {
         if (_disposed) return;
+        AppLog.Instance.Info("rebuild do dispositivo de áudio");
         try
         {
             // Tear down session listeners

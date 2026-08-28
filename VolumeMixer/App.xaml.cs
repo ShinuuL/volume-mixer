@@ -39,9 +39,13 @@ public partial class App : Application
 
         try
         {
+            _log.Info("iniciando: criando AudioController");
             var audio = new AudioController();
+            _log.Info("iniciando: criando MainViewModel");
             _viewModel = new MainViewModel(audio);
+            _log.Info("iniciando: aplicando settings");
             _viewModel.Settings.Apply();
+            _log.Info("iniciando: criando TrayService");
             var startup = new StartupRegistry();
             _tray = new TrayService(_viewModel, () => new PopupWindow { DataContext = _viewModel }, startup);
             _tray.ClosingRequested += OnClosingRequested;
@@ -54,6 +58,12 @@ public partial class App : Application
                 "Volume Mixer", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
         }
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _log.Info($"aplicativo encerrando (ExitCode={e.ApplicationExitCode})");
+        base.OnExit(e);
     }
 
     private void OnClosingRequested(object? sender, EventArgs e)

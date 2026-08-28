@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using VolumeMixer.Audio;
+using VolumeMixer.Infrastructure;
 using VolumeMixer.Models;
 
 namespace VolumeMixer.ViewModels;
@@ -7,6 +8,7 @@ namespace VolumeMixer.ViewModels;
 public sealed class MainViewModel : ViewModelBase, IDisposable
 {
     private readonly IAudioController _audio;
+    private readonly System.Windows.Threading.DispatcherTimer _refreshTimer;
     private bool _disposed;
 
     public MasterViewModel Master { get; }
@@ -26,6 +28,16 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
         Master = new MasterViewModel(audio);
         _audio.SessionsChanged += (_, _) => RefreshSessions();
         RefreshSessions();
+
+        // Polling de segurança: os callbacks COM de sessão do Windows podem não
+        // disparar em algumas configurações; um timer garante que a lista se
+        // mantenha atualizada mesmo assim.
+        _refreshTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(2)
+        };
+        _refreshTimer.Tick += (_, _) => RefreshSessions();
+        _refreshTimer.Start();
     }
 
     /// <summary>Dif por PID: preserva instâncias vivas, adiciona novas, remove mortas.</summary>
@@ -54,12 +66,15 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             if (existing is not null) existing.UpdateFrom(info);
             else Apps.Add(new AppVolumeViewModel(_audio, info));
         }
+
+        AppLog.Instance.Info($"UI: {Apps.Count} apps na lista");
     }
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        _refreshTimer.Stop();
         _audio.Dispose();
     }
 }
