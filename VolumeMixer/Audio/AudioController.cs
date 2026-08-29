@@ -22,6 +22,16 @@ public sealed partial class AudioController : IAudioController
     private static readonly ConcurrentDictionary<string, byte[]> IconCacheByExe = new(StringComparer.OrdinalIgnoreCase);
     private bool _disposed;
 
+    // Polling de reconciliação: os callbacks COM de sessão do Windows nem sempre
+    // disparam quando novas sessões surgem (OnSessionCreated é notoriamente flaky).
+    // Como o GetSessions() é o único método chamado periodicamente pela UI (a cada
+    // ~2s), ele também reconciliará o cache com o enumerator em intervalos fixos —
+    // caso contrário a lista congelaria no estado inicial quando um app novo tocasse
+    // áudio sem o sink notificar.
+    private int _pollTick;
+    private const int ReconcileEveryTicks = 5;     // ~10s (5 polls de 2s)
+    private const int RecreateEveryTicks = 30;     // ~60s (recria o enumerator)
+
     /// <summary>Tracks one audio session: control RCW (for unregister), sink, volume RCW, and current state.</summary>
     private sealed class SessionEntry(
         IAudioSessionControl Control,
@@ -137,6 +147,7 @@ public sealed partial class AudioController : IAudioController
         ThrowIfDisposed();
         return _dispatcher.Invoke(() =>
         {
+            ReconcileIfDue();
             var result = new List<AppVolume>();
             foreach (var (pid, entries) in _sessions)
             {
@@ -189,6 +200,38 @@ public sealed partial class AudioController : IAudioController
     }
 
     // ──────────────── Session cache (runs on MTA thread) ────────────────
+
+    /// <summary>Runs on the MTA thread (via GetSessions). Periodically re-enumerates
+    /// the session enumerator so the list keeps reflecting audio apps even when the
+    /// COM callbacks fail to fire. Falls back to a fresh enumerator every so often to
+    /// avoid a stale snapshot that hides newly created sessions.</summary>
+    private void ReconcileIfDue()
+    {
+        var tick = Interlocked.Increment(ref _pollTick);
+        if (tick % RecreateEveryTicks == 0)
+            RecreateEnumerator();
+        else if (tick % ReconcileEveryTicks == 0)
+            RefreshSessionCache();
+    }
+
+    /// <summary>Release the current session enumerator and obtain a fresh one, then
+    /// refresh the cache. Ensures the enumerator reflects sessions created since
+    /// startup (an existing enumerator may hold a stale snapshot).</summary>
+    private void RecreateEnumerator()
+    {
+        if (_sessionManager is null) return;
+        AppLog.Instance.Info("enumerator de sessões: recriando a partir do manager");
+        try
+        {
+            Release(ref _sessionEnumerator);
+            _sessionManager.GetSessionEnumerator(out _sessionEnumerator);
+        }
+        catch (Exception ex)
+        {
+            AppLog.Instance.Error("RecreateEnumerator: falha ao obter novo enumerator", ex);
+        }
+        RefreshSessionCache();
+    }
 
     private void RefreshSessionCache()
     {
