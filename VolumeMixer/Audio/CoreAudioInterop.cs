@@ -129,13 +129,15 @@ internal interface ISimpleAudioVolume
     void GetMute([MarshalAs(UnmanagedType.Bool)] out bool mute);
 }
 
-/// <summary>vtable completa (5 slots) — ordem obrigatória.</summary>
+/// <summary>vtable completa (7 slots próprios) — ordem obrigatória.</summary>
 [ComImport, Guid("24918ACC-64B3-37C1-8CA9-74A66E9957A8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionEvents
 {
     void OnDisplayNameChanged(string displayName, ref Guid eventContext);
     void OnIconPathChanged(string iconPath, ref Guid eventContext);
-    void OnVolumeChanged(float newVolume, bool newMute, ref Guid eventContext);
+    void OnSimpleVolumeChanged(float newVolume, [MarshalAs(UnmanagedType.Bool)] bool newMute, ref Guid eventContext);
+    void OnChannelVolumeChanged(uint channelCount, [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] float[] newChannelVolumeArray, uint changedChannel, ref Guid eventContext);
+    void OnGroupingParamChanged(ref Guid newGroupingParam, ref Guid eventContext);
     void OnStateChanged(int newState);
     void OnSessionDisconnected(int disconnectReason);
 }
