@@ -25,4 +25,18 @@ public class AudioSessionsIntegrationTests
         audio.SetSessionVolume(int.MaxValue, 50);
         audio.SetSessionMute(int.MaxValue, true);
     }
+
+    [Fact]
+    public void GetSessions_repetido_como_polling_reconcilia_sem_lancar()
+    {
+        // Simula o polling de ~2s: chamadas seguidas disparam RefreshSessionCache e
+        // a recriação periódica do enumerator. Nenhuma delas pode lançar (a lista
+        // seria vazia se nada estiver tocando, mas o controller não pode quebrar).
+        using var audio = new AudioController();
+        for (var i = 0; i < 35; i++)
+        {
+            var sessions = audio.GetSessions();
+            Assert.All(sessions, s => Assert.True(s.ProcessId > 0));
+        }
+    }
 }

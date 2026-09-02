@@ -35,6 +35,12 @@ Para rodar o `.exe` publicado (single-file self-contained):
 
 > **Nota:** se você mover o `.exe` de lugar depois de ativar "Iniciar com Windows", reative a opção para atualizar o caminho no registro.
 
+## Portal geral
+
+> [!info] Página mãe: `../portal-geral/MOTHER.md`
+
+Downloads de todas as releases: `D:\Dev\Desenvolvimento\Projetos\portal-geral\index.html` (gateway `updates-gateway.sofaltaumaletr.workers.dev`).
+
 ## Como compilar (para desenvolvedores)
 
 Pré-requisitos:

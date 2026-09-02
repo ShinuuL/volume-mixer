@@ -26,10 +26,10 @@ internal static class CrashDiagnostics
     [UnmanagedFunctionPointer(CallingConvention.Winapi)]
     private delegate uint UnhandledExceptionFilterDelegate(IntPtr exceptionPointers);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr SetUnhandledExceptionFilter(IntPtr filter);
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern IntPtr CreateFileW(
         string fileName, uint desiredAccess, uint shareMode,
         IntPtr securityAttributes, uint creationDisposition, uint flagsAndAttributes, IntPtr templateFile);
@@ -41,12 +41,12 @@ internal static class CrashDiagnostics
     [DllImport("kernel32.dll")]
     private static extern bool CloseHandle(IntPtr handle);
 
-    [DllImport("advapi32.dll", SetLastError = true)]
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern int RegCreateKeyEx(
         IntPtr hKey, string lpSubKey, int reserved, string? lpClass, int dwOptions,
         int samDesired, IntPtr lpSecurityAttributes, out IntPtr phkResult, out int lpdwDisposition);
 
-    [DllImport("advapi32.dll", SetLastError = true)]
+    [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     private static extern int RegSetValueEx(
         IntPtr hKey, string? lpValueName, int reserved, int dwType, byte[] lpData, int cbData);
 
@@ -54,12 +54,15 @@ internal static class CrashDiagnostics
     private static extern int RegCloseKey(IntPtr hKey);
 
     private const uint GenericWrite = 0x40000000;
+    private const uint FileShareRead = 1;
+    private const uint FileShareWrite = 2;
     private const uint CreateAlways = 2;
     private const uint FileAttributeNormal = 0x80;
     private const int RegSz = 1;
     private const int RegDword = 4;
     private const int KeyWrite = 0x20006;
     private static readonly IntPtr Hkcu = new(0x80000001);
+    private static readonly IntPtr InvalidHandle = new(-1);
 
     public static void Install(string logDirectory)
     {
@@ -71,7 +74,8 @@ internal static class CrashDiagnostics
         try { Directory.CreateDirectory(logDirectory); } catch { }
         try
         {
-            _logHandle = CreateFileW(crashPath, GenericWrite, 0, IntPtr.Zero, CreateAlways, FileAttributeNormal, IntPtr.Zero);
+            var handle = CreateFileW(crashPath, GenericWrite, FileShareRead | FileShareWrite, IntPtr.Zero, CreateAlways, FileAttributeNormal, IntPtr.Zero);
+            _logHandle = handle == InvalidHandle ? IntPtr.Zero : handle;
         }
         catch { _logHandle = IntPtr.Zero; }
 
@@ -101,19 +105,17 @@ internal static class CrashDiagnostics
         try
         {
             var exeName = Path.GetFileName(Environment.ProcessPath ?? "VolumeMixer.exe");
-            var keyPath = $@"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\{exeName}";
-            if (RegCreateKeyEx(Hkcu, keyPath, 0, null, 0, KeyWrite, IntPtr.Zero, out var key, out _) != 0)
-                return;
-
             var dumpDir = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "VolumeMixer", "crashdumps");
             Directory.CreateDirectory(dumpDir);
 
-            RegSetValueEx(key, "DumpFolder", 0, RegSz, Encoding.Unicode.GetBytes(dumpDir + "\0"), (dumpDir.Length + 1) * 2);
-            RegSetValueEx(key, "DumpType", 0, RegDword, BitConverter.GetBytes(2), 4); // 2 = full dump
-            RegSetValueEx(key, "DumpCount", 0, RegDword, BitConverter.GetBytes(5), 4);
-            RegCloseKey(key);
+            using var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
+                $@"SOFTWARE\Microsoft\Windows\Windows Error Reporting\LocalDumps\{exeName}", true);
+            if (key is null) return;
+            key.SetValue("DumpFolder", dumpDir, Microsoft.Win32.RegistryValueKind.String);
+            key.SetValue("DumpType", 2, Microsoft.Win32.RegistryValueKind.DWord);
+            key.SetValue("DumpCount", 5, Microsoft.Win32.RegistryValueKind.DWord);
         }
         catch { /* best effort */ }
     }
@@ -140,7 +142,7 @@ internal static class CrashDiagnostics
 
             var msg = Encoding.UTF8.GetBytes(
                 $"[{DateTime.Now:HH:mm:ss.fff}] CRASH NATIVO (SEH) code=0x{code:X8} addr=0x{address.ToInt64():X}\r\n");
-            if (_logHandle != IntPtr.Zero)
+            if (_logHandle != IntPtr.Zero && _logHandle != InvalidHandle)
                 WriteFile(_logHandle, msg, (uint)msg.Length, out _, IntPtr.Zero);
         }
         catch { /* nada a fazer */ }
