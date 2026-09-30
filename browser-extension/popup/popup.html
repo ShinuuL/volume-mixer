@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <title>Volume Mixer</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <header>
+    <h1>Volume Mixer</h1>
+    <span class="hint">volume salvo por site</span>
+  </header>
+
+  <p id="loading" class="empty">Procurando guias com áudio…</p>
+  <main id="list" aria-live="polite"></main>
+  <p id="empty" class="empty" hidden>Nenhuma guia ou app com áudio agora.<br>
+    Abra ou dê play em algo e reabra este painel.</p>
+
+  <details id="saved-wrap" hidden>
+    <summary>Sites salvos (<span id="saved-count">0</span>)</summary>
+    <div id="saved"></div>
+  </details>
+
+  <template id="row-tpl">
+    <section class="row">
+      <div class="head">
+        <img class="favicon" alt="" width="16" height="16">
+        <div class="titles">
+          <span class="title"></span>
+          <span class="site"></span>
+        </div>
+        <span class="badge playing" hidden title="Tocando agora">♪</span>
+      </div>
+      <div class="controls">
+        <button class="mute" type="button" title="Mudo"></button>
+        <input class="slider" type="range" min="0" max="100" step="1" aria-label="Volume">
+        <input class="value" type="number" min="0" max="100" aria-label="Volume em %">
+        <button class="focus" type="button" title="Ir para a guia">↗</button>
+      </div>
+    </section>
+  </template>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

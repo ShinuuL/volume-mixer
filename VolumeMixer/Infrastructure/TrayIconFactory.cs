@@ -8,20 +8,19 @@ internal static class TrayIconFactory
     [DllImport("user32.dll", SetLastError = true)]
     private static extern bool DestroyIcon(IntPtr hIcon);
 
-    /// <summary>Alto-falante simples desenhado em 16x16; evita asset binário.</summary>
-    public static Icon Create()
-    {
-        using var bmp = new Bitmap(16, 16);
-        using var g = Graphics.FromImage(bmp);
-        g.Clear(Color.Transparent);
-        using var brush = new SolidBrush(Color.FromArgb(0, 120, 215));
-        // caixa do alto-falante
-        g.FillPolygon(brush, new[] { new Point(2, 6), new Point(6, 6), new Point(10, 2), new Point(10, 14), new Point(6, 10), new Point(2, 10) });
-        // ondas
-        using var pen = new Pen(brush, 1.6f);
-        g.DrawArc(pen, 10, 4, 4, 8, -60, 120);
-        g.DrawArc(pen, 12, 2, 6, 12, -60, 120);
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetricsForDpi(int index, uint dpi);
 
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForSystem();
+
+    private const int SmCxSmIcon = 49;
+
+    /// <summary>Glifo de faders (<see cref="IconArt"/>) no tamanho de ícone pequeno
+    /// do DPI atual (16/20/24/32px), na cor do tema da barra de tarefas.</summary>
+    public static Icon Create(bool muted = false)
+    {
+        using var bmp = IconArt.RenderTrayIcon(TraySize(), IsLightTaskbar(), muted);
         var hIcon = bmp.GetHicon();
         try
         {
@@ -33,5 +32,23 @@ internal static class TrayIconFactory
         {
             DestroyIcon(hIcon);
         }
+    }
+
+    private static int TraySize()
+    {
+        try { return Math.Clamp(GetSystemMetricsForDpi(SmCxSmIcon, GetDpiForSystem()), 16, 64); }
+        catch { return 16; }
+    }
+
+    /// <summary>Barra de tarefas clara? (HKCU ...\Themes\Personalize\SystemUsesLightTheme).</summary>
+    internal static bool IsLightTaskbar()
+    {
+        try
+        {
+            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            return key?.GetValue("SystemUsesLightTheme") is int v && v == 1;
+        }
+        catch { return false; }
     }
 }

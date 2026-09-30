@@ -31,14 +31,25 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
 
         // Polling de segurança: os callbacks COM de sessão do Windows podem não
         // disparar em algumas configurações; um timer garante que a lista se
-        // mantenha atualizada mesmo assim.
+        // mantenha atualizada mesmo assim. Só roda com o popup visível
+        // (StartPolling/StopPolling) — na bandeja não há o que atualizar.
         _refreshTimer = new System.Windows.Threading.DispatcherTimer
         {
             Interval = TimeSpan.FromSeconds(2)
         };
         _refreshTimer.Tick += (_, _) => RefreshSessions();
+    }
+
+    /// <summary>Popup abriu: atualiza já e passa a reconciliar periodicamente.</summary>
+    public void StartPolling()
+    {
+        if (_disposed) return;
+        RefreshSessions();
+        Master.Refresh();
         _refreshTimer.Start();
     }
+
+    public void StopPolling() => _refreshTimer.Stop();
 
     /// <summary>Dif por PID: preserva instâncias vivas, adiciona novas, remove mortas.</summary>
     public void RefreshSessions()
@@ -67,7 +78,7 @@ public sealed class MainViewModel : ViewModelBase, IDisposable
             else Apps.Add(new AppVolumeViewModel(_audio, info));
         }
 
-        AppLog.Instance.Info($"UI: {Apps.Count} apps na lista");
+        AppLog.Instance.Debug($"UI: {Apps.Count} apps na lista");
     }
 
     public void Dispose()

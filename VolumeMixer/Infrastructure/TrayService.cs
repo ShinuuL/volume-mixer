@@ -51,6 +51,41 @@ public sealed class TrayService : IDisposable
             ContextMenuStrip = menu,
         };
         _icon.MouseClick += OnMouseClick;
+
+        // Ícone reflete o mudo do master e acompanha o tema claro/escuro da barra.
+        _iconMuted = viewModel.Master.IsMuted;
+        viewModel.Master.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(MasterViewModel.IsMuted)) UpdateIcon();
+        };
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged += OnUserPreferenceChanged;
+        UpdateIcon(force: true);
+    }
+
+    private bool _iconMuted;
+    private bool _iconLight;
+
+    private void OnUserPreferenceChanged(object? sender, Microsoft.Win32.UserPreferenceChangedEventArgs e)
+    {
+        if (e.Category == Microsoft.Win32.UserPreferenceCategory.General) UpdateIcon();
+    }
+
+    /// <summary>Redesenha só quando mudo/tema mudou (cada ícone é um handle GDI).</summary>
+    private void UpdateIcon(bool force = false)
+    {
+        try
+        {
+            var muted = _viewModel.Master.IsMuted;
+            var light = TrayIconFactory.IsLightTaskbar();
+            if (!force && muted == _iconMuted && light == _iconLight) return;
+            _iconMuted = muted;
+            _iconLight = light;
+            var old = _icon.Icon;
+            _icon.Icon = TrayIconFactory.Create(muted);
+            _icon.Text = muted ? "Volume Mixer (mudo)" : "Volume Mixer";
+            old?.Dispose();
+        }
+        catch (Exception ex) { AppLog.Instance.Error("falha ao atualizar ícone da bandeja", ex); }
     }
 
     private ToolStripMenuItem? _accentMenu;
@@ -173,18 +208,41 @@ public sealed class TrayService : IDisposable
     {
         if (_popup is { IsLoaded: true })
         {
-            _popup.Close();
-            _popup = null;
+            ClosePopup();
             return;
         }
-        _popup = _popupFactory();
-        _popup.Show();
-        _popup.Activate();
+        var popup = _popupFactory();
+        popup.Closed += (_, _) =>
+        {
+            _viewModel.StopPolling();
+            if (ReferenceEquals(_popup, popup)) _popup = null;
+        };
+        _popup = popup;
+        _viewModel.StartPolling();
+        popup.Show();
+        popup.Activate();
+    }
+
+    /// <summary>Fecha o popup se estiver aberto (também usado para recuperar de
+    /// falhas de renderização da janela, ex: Win32Exception 1816).</summary>
+    public void ClosePopup()
+    {
+        var popup = _popup;
+        _popup = null;
+        try { popup?.Close(); } catch { /* janela já em estado inválido */ }
+    }
+
+    /// <summary>Remove o ícone da bandeja; seguro de chamar de outra thread
+    /// (Shell_NotifyIcon não depende do loop de mensagens).</summary>
+    public void HideIcon()
+    {
+        try { _icon.Visible = false; } catch { /* best effort */ }
     }
 
     public void Dispose()
     {
-        _popup?.Close();
+        Microsoft.Win32.SystemEvents.UserPreferenceChanged -= OnUserPreferenceChanged;
+        ClosePopup();
         _icon.Visible = false;
         _icon.Dispose();
     }

@@ -20,7 +20,16 @@ public sealed partial class AudioController : IAudioController
     private IAudioSessionEnumerator? _sessionEnumerator;
     private readonly Dictionary<int, List<SessionEntry>> _sessions = new();
     private static readonly ConcurrentDictionary<string, byte[]> IconCacheByExe = new(StringComparer.OrdinalIgnoreCase);
+    // Nome/ícone por PID: evita Process.GetProcessById + MainModule a cada poll
+    // (abria handles e gerava ArgumentException em loop para processos mortos).
+    private readonly Dictionary<int, (string Name, byte[]? Icon)> _processInfo = new();
     private bool _disposed;
+    private int _refreshQueued;
+    private int _rebuildQueued;
+
+    /// <summary>AUDCLNT_E_DEVICE_INVALIDATED: o endpoint foi removido/trocado
+    /// (fone, RDP/RustDesk/AnyDesk, driver). Todos os RCWs ficam inválidos.</summary>
+    private const int DeviceInvalidated = unchecked((int)0x88890004);
 
     // Polling de reconciliação: os callbacks COM de sessão do Windows nem sempre
     // disparam quando novas sessões surgem (OnSessionCreated é notoriamente flaky).
@@ -28,9 +37,12 @@ public sealed partial class AudioController : IAudioController
     // ~2s), ele também reconciliará o cache com o enumerator em intervalos fixos —
     // caso contrário a lista congelaria no estado inicial quando um app novo tocasse
     // áudio sem o sink notificar.
-    private int _pollTick;
-    private const int ReconcileEveryTicks = 5;     // ~10s (5 polls de 2s)
-    private const int RecreateEveryTicks = 30;     // ~60s (recria o enumerator)
+    // Baseado em tempo (não em nº de polls): o polling da UI agora só roda com
+    // o popup aberto, então ao reabrir depois de horas a reconciliação é imediata.
+    private readonly Stopwatch _sinceReconcile = Stopwatch.StartNew();
+    private readonly Stopwatch _sinceRecreate = Stopwatch.StartNew();
+    private static readonly TimeSpan ReconcileEvery = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan RecreateEvery = TimeSpan.FromSeconds(60);
 
     /// <summary>Tracks one audio session: control RCW (for unregister), sink, volume RCW, and current state.</summary>
     private sealed class SessionEntry(
@@ -68,7 +80,18 @@ public sealed partial class AudioController : IAudioController
     /// <summary>Create device + endpoint + session manager + enumerator on current (MTA) thread.</summary>
     private void ActivateDefaultDevice()
     {
-        _deviceEnumerator!.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out _device);
+        try
+        {
+            _deviceEnumerator!.GetDefaultAudioEndpoint(EDataFlow.Render, ERole.Multimedia, out _device);
+        }
+        catch (COMException ex)
+        {
+            // Sem dispositivo de reprodução (ex: sessão remota recém-aberta).
+            // Não derruba: o próximo OnDeviceStateChanged/DefaultDeviceChanged reconstrói.
+            AppLog.Instance.Error("nenhum dispositivo de reprodução padrão disponível", ex);
+            _device = null;
+            return;
+        }
 
         var iidEndpoint = typeof(IAudioEndpointVolume).GUID;
         _device!.Activate(ref iidEndpoint, ComCtx.ClsCtxAll, IntPtr.Zero, out var endpointObj);
@@ -102,9 +125,18 @@ public sealed partial class AudioController : IAudioController
         ThrowIfDisposed();
         return _dispatcher.Invoke(() =>
         {
-            _endpoint!.GetMasterVolumeLevelScalar(out var level);
-            _endpoint.GetMute(out var mute);
-            return new MasterInfo(Math.Round(level * 100d), mute);
+            if (_endpoint is null) return new MasterInfo(0, false);
+            try
+            {
+                _endpoint.GetMasterVolumeLevelScalar(out var level);
+                _endpoint.GetMute(out var mute);
+                return new MasterInfo(Math.Round(level * 100d), mute);
+            }
+            catch (COMException ex) when (ex.HResult == DeviceInvalidated)
+            {
+                QueueRebuild();
+                return new MasterInfo(0, false);
+            }
         });
     }
 
@@ -117,7 +149,7 @@ public sealed partial class AudioController : IAudioController
             try
             {
                 var ctx = ComCtx.Empty;
-                _endpoint!.SetMasterVolumeLevelScalar(level, ref ctx);
+                _endpoint?.SetMasterVolumeLevelScalar(level, ref ctx);
             }
             catch (Exception ex)
             {
@@ -133,7 +165,7 @@ public sealed partial class AudioController : IAudioController
         {
             try
             {
-                _endpoint!.SetMute(mute, IntPtr.Zero);
+                _endpoint?.SetMute(mute, IntPtr.Zero);
             }
             catch (Exception ex)
             {
@@ -157,16 +189,19 @@ public sealed partial class AudioController : IAudioController
                 if (entries[0].State != AudioSessionState.Active) continue;
                 try
                 {
-                    AppLog.Instance.Info($"GetSessions: lendo PID={pid}");
                     entries[0].Volume.GetMasterVolume(out var level);
                     entries[0].Volume.GetMute(out var mute);
-                    var name = ResolveProcessName(pid);
-                    result.Add(new AppVolume(pid, name, ResolveIconPng(pid),
-                        Math.Round(level * 100d), mute));
+                    var (name, icon) = ResolveProcessInfo(pid);
+                    result.Add(new AppVolume(pid, name, icon, Math.Round(level * 100d), mute));
+                }
+                catch (COMException ex) when (ex.HResult == DeviceInvalidated)
+                {
+                    QueueRebuild();
+                    break;
                 }
                 catch (Exception ex) { AppLog.Instance.Error($"GetSessions: exceção PID={pid}", ex); }
             }
-            AppLog.Instance.Info($"GetSessions: {result.Count} apps retornados");
+            AppLog.Instance.Debug($"GetSessions: {result.Count} apps retornados");
             return result.OrderBy(a => a.ProcessName, StringComparer.OrdinalIgnoreCase).ToList();
         });
     }
@@ -207,11 +242,17 @@ public sealed partial class AudioController : IAudioController
     /// avoid a stale snapshot that hides newly created sessions.</summary>
     private void ReconcileIfDue()
     {
-        var tick = Interlocked.Increment(ref _pollTick);
-        if (tick % RecreateEveryTicks == 0)
+        if (_sinceRecreate.Elapsed >= RecreateEvery)
+        {
+            _sinceRecreate.Restart();
+            _sinceReconcile.Restart();
             RecreateEnumerator();
-        else if (tick % ReconcileEveryTicks == 0)
+        }
+        else if (_sinceReconcile.Elapsed >= ReconcileEvery)
+        {
+            _sinceReconcile.Restart();
             RefreshSessionCache();
+        }
     }
 
     /// <summary>Release the current session enumerator and obtain a fresh one, then
@@ -220,7 +261,7 @@ public sealed partial class AudioController : IAudioController
     private void RecreateEnumerator()
     {
         if (_sessionManager is null) return;
-        AppLog.Instance.Info("enumerator de sessões: recriando a partir do manager");
+        AppLog.Instance.Debug("enumerator de sessões: recriando a partir do manager");
         try
         {
             Release(ref _sessionEnumerator);
@@ -250,14 +291,16 @@ public sealed partial class AudioController : IAudioController
             // Se o enumerator falhar (ex: dispositivo removido), preserva o cache
             // anterior em vez de deixá-lo vazio.
             AppLog.Instance.Error("RefreshSessionCache: GetCount falhou, preservando cache", ex);
+            if (ex is COMException { HResult: DeviceInvalidated }) QueueRebuild();
             return;
         }
 
-        AppLog.Instance.Info($"RefreshSessionCache: {count} sessões no enumerator");
+        AppLog.Instance.Debug($"RefreshSessionCache: {count} sessões no enumerator");
 
         // Só libera o cache antigo depois de confirmar que a re-enumeração é viável.
         ReleaseAllSessions();
         var addedCount = 0;
+        var invalidated = false;
         for (var i = 0; i < count; i++)
         {
             IAudioSessionControl? control = null;
@@ -265,7 +308,6 @@ public sealed partial class AudioController : IAudioController
             bool transferred = false;
             try
             {
-                AppLog.Instance.Info($"RefreshSessionCache: enumerando sessão {i}");
                 _sessionEnumerator.GetSession(i, out control);
                 var control2 = (IAudioSessionControl2)control;
                 control2.GetState(out var state);
@@ -275,8 +317,6 @@ public sealed partial class AudioController : IAudioController
                 {
                     continue;
                 }
-                var name = ResolveProcessName(pid);
-
                 if (state == AudioSessionState.Expired) { continue; }
                 // Filtro por PID: sessões de sistema sempre têm PID 0
                 if (pid == 0) { continue; }
@@ -290,7 +330,14 @@ public sealed partial class AudioController : IAudioController
                 list.Add(new SessionEntry(control, sink, volume, state));
                 transferred = true;
                 addedCount++;
-                AppLog.Instance.Info($"  sessão: PID={pid} nome={name} estado={state}");
+                AppLog.Instance.Debug($"  sessão: PID={pid} estado={state}");
+            }
+            catch (COMException ex) when (ex.HResult == DeviceInvalidated)
+            {
+                // Uma sessão inválida = dispositivo inteiro inválido: para de
+                // enumerar (evita N erros seguidos) e reconstrói do zero.
+                invalidated = true;
+                break;
             }
             catch (Exception ex) { AppLog.Instance.Error($"RefreshSessionCache: exceção na sessão {i}", ex); }
             finally
@@ -303,7 +350,16 @@ public sealed partial class AudioController : IAudioController
             }
         }
 
-        AppLog.Instance.Info($"RefreshSessionCache: {addedCount} sessões ativas adicionadas");
+        // Descarta nome/ícone de PIDs que sumiram (PIDs são reutilizados pelo Windows).
+        foreach (var stale in _processInfo.Keys.Where(k => !_sessions.ContainsKey(k)).ToList())
+            _processInfo.Remove(stale);
+
+        AppLog.Instance.Debug($"RefreshSessionCache: {addedCount} sessões ativas adicionadas");
+        if (invalidated)
+        {
+            AppLog.Instance.Info("dispositivo de áudio invalidado; agendando rebuild");
+            QueueRebuild();
+        }
     }
 
     /// <summary>Unregister every sink, release every control + volume RCW, clear.</summary>
@@ -325,12 +381,39 @@ public sealed partial class AudioController : IAudioController
     internal void NotifySessionsChanged()
     {
         if (_disposed) return;
-        AppLog.Instance.Info("callback: sessões mudaram");
+        AppLog.Instance.Debug("callback: sessões mudaram");
+        // Coalesce: uma rajada de callbacks (ex: vários apps iniciando) vira
+        // uma única re-enumeração em vez de N.
+        if (Interlocked.Exchange(ref _refreshQueued, 1) == 1) return;
         _dispatcher.Post(() =>
         {
+            Interlocked.Exchange(ref _refreshQueued, 0);
             if (_disposed) return;
             RefreshSessionCache();
-            Post(SessionsChanged);
+            PostSessionsChanged();
+        });
+    }
+
+    /// <summary>Volume/mudo de uma sessão mudou: o cache continua válido, só a
+    /// UI precisa reler. Antes isso re-enumerava e re-registrava todas as
+    /// sessões a cada passo do slider.</summary>
+    internal void NotifySessionVolumeChanged()
+    {
+        if (_disposed) return;
+        PostSessionsChanged();
+    }
+
+    /// <summary>Agenda (uma vez) a reconstrução do dispositivo na thread MTA.
+    /// Seguro de chamar de callbacks COM, que não devem bloquear.</summary>
+    internal void QueueRebuild()
+    {
+        if (_disposed) return;
+        if (Interlocked.Exchange(ref _rebuildQueued, 1) == 1) return;
+        _dispatcher.Post(() =>
+        {
+            Interlocked.Exchange(ref _rebuildQueued, 0);
+            if (_disposed) return;
+            RebuildCore();
         });
     }
 
@@ -338,8 +421,8 @@ public sealed partial class AudioController : IAudioController
     internal void NotifyMasterChanged()
     {
         if (_disposed) return;
-        AppLog.Instance.Info("callback: volume master mudou");
-        Post(MasterChanged);
+        AppLog.Instance.Debug("callback: volume master mudou");
+        PostMasterChanged();
     }
 
     /// <summary>Device-default-changed callback (already on MTA thread from COM).</summary>
@@ -363,35 +446,32 @@ public sealed partial class AudioController : IAudioController
             // Rebuild
             ActivateDefaultDevice();
         }
-        catch { /* best-effort */ }
+        catch (Exception ex) { AppLog.Instance.Error("rebuild do dispositivo falhou", ex); }
 
-        Post(SessionsChanged);
+        PostSessionsChanged();
         NotifyMasterChanged();
-    }
-
-    /// <summary>Public entry for device rebuild (marshals to MTA if needed).</summary>
-    internal void RebuildAll()
-    {
-        if (_disposed) return;
-        if (Thread.CurrentThread == _dispatcher.MtaThread)
-            RebuildCore();
-        else
-            _dispatcher.Invoke(RebuildCore);
     }
 
     // ──────────────── Helpers ────────────────
 
-    private static string ResolveProcessName(int pid)
+    private (string Name, byte[]? Icon) ResolveProcessInfo(int pid)
     {
-        try { return Process.GetProcessById(pid).ProcessName; }
-        catch { return "Aplicativo desconhecido"; }
+        if (_processInfo.TryGetValue(pid, out var cached)) return cached;
+        (string Name, byte[]? Icon) info = ("Aplicativo desconhecido", null);
+        try
+        {
+            using var process = Process.GetProcessById(pid);
+            info = (process.ProcessName, ResolveIconPng(process));
+        }
+        catch { /* processo já encerrou: mantém o nome genérico */ }
+        _processInfo[pid] = info;
+        return info;
     }
 
-    private static byte[]? ResolveIconPng(int pid)
+    private static byte[]? ResolveIconPng(Process process)
     {
         try
         {
-            var process = Process.GetProcessById(pid);
             var exePath = process.MainModule?.FileName;
             if (string.IsNullOrEmpty(exePath) || !File.Exists(exePath)) return null;
             // Cache por exe path: a extração STA só roda uma vez por executável.
@@ -426,12 +506,26 @@ public sealed partial class AudioController : IAudioController
         return result;
     }
 
-    /// <summary>Marshal event to UI thread (captured SynchronizationContext).</summary>
-    private void Post(EventHandler? handler)
+    private sealed class PendingFlag { public int Value; }
+    private readonly PendingFlag _sessionsPostPending = new();
+    private readonly PendingFlag _masterPostPending = new();
+
+    private void PostSessionsChanged() => PostToUi(_sessionsPostPending, () => SessionsChanged);
+    private void PostMasterChanged() => PostToUi(_masterPostPending, () => MasterChanged);
+
+    /// <summary>Marshal event to UI thread (captured SynchronizationContext).
+    /// No máximo UM aviso pendente por evento: rajadas de callbacks COM (slider,
+    /// vários apps tocando) viravam centenas de mensagens na fila da UI, e a fila
+    /// cheia (Win32Exception 1816) mata o Dispatcher do WPF.</summary>
+    private void PostToUi(PendingFlag pending, Func<EventHandler?> handler)
     {
-        if (handler is null) return;
-        if (_syncContext is not null) _syncContext.Post(_ => handler(this, EventArgs.Empty), null);
-        else handler(this, EventArgs.Empty);
+        if (_syncContext is null) { handler()?.Invoke(this, EventArgs.Empty); return; }
+        if (Interlocked.Exchange(ref pending.Value, 1) == 1) return;
+        _syncContext.Post(_ =>
+        {
+            Interlocked.Exchange(ref pending.Value, 0);
+            if (!_disposed) handler()?.Invoke(this, EventArgs.Empty);
+        }, null);
     }
 
     private void ThrowIfDisposed() => ObjectDisposedException.ThrowIf(_disposed, this);
