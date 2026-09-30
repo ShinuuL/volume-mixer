@@ -11,6 +11,11 @@ internal static class ComCtx
     internal static readonly Guid Empty = Guid.Empty;
 }
 
+// IMPORTANTE: parâmetros string de interfaces COM são marshalados como BSTR por
+// padrão. A CoreAudio passa LPCWSTR — sem [MarshalAs(LPWStr)] o runtime lê um
+// "prefixo de tamanho" inexistente (MarshalDirectiveException "Excessively long
+// string" nos logs) e pode corromper memória / derrubar o processo.
+
 /// <summary>Co-cria o enumerador de dispositivos (CLSID MMDeviceEnumerator).</summary>
 /// <remarks>Não selada: o elenco para IMMDeviceEnumerator exige classe aberta (QI em runtime).</remarks>
 [ComImport, Guid("BCDE0395-E52F-467C-8E3D-C4579291692E")]
@@ -28,7 +33,7 @@ internal interface IMMDeviceEnumerator
 {
     void EnumAudioEndpoints(EDataFlow dataFlow, int stateMask, out IntPtr devices); // não usado; ocupa slot
     void GetDefaultAudioEndpoint(EDataFlow dataFlow, ERole role, out IMMDevice device);
-    void GetDevice(string deviceId, out IMMDevice device);                          // não usado; ocupa slot
+    void GetDevice([MarshalAs(UnmanagedType.LPWStr)] string deviceId, out IMMDevice device);                          // não usado; ocupa slot
     void RegisterEndpointNotificationCallback(IMMNotificationClient client);
     void UnregisterEndpointNotificationCallback(IMMNotificationClient client);
 }
@@ -36,11 +41,11 @@ internal interface IMMDeviceEnumerator
 [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMNotificationClient
 {
-    void OnDeviceStateChanged(string deviceId, int newState);
-    void OnDeviceAdded(string deviceId);
-    void OnDeviceRemoved(string deviceId);
-    void OnDefaultDeviceChanged(EDataFlow flow, ERole role, string defaultDeviceId);
-    void OnPropertyValueChanged(string deviceId, PropertyKey key);
+    void OnDeviceStateChanged([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int newState);
+    void OnDeviceAdded([MarshalAs(UnmanagedType.LPWStr)] string deviceId);
+    void OnDeviceRemoved([MarshalAs(UnmanagedType.LPWStr)] string deviceId);
+    void OnDefaultDeviceChanged(EDataFlow flow, ERole role, [MarshalAs(UnmanagedType.LPWStr)] string defaultDeviceId);
+    void OnPropertyValueChanged([MarshalAs(UnmanagedType.LPWStr)] string deviceId, PropertyKey key);
 }
 
 [StructLayout(LayoutKind.Sequential)]
@@ -91,9 +96,9 @@ internal interface IAudioSessionControl
 {
     void GetState(out int state);                                                // slot 3
     void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);     // slot 4
-    void SetDisplayName(string name, ref Guid eventContext);                     // slot 5
+    void SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string name, ref Guid eventContext);                     // slot 5
     void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);        // slot 6
-    void SetIconPath(string path, ref Guid eventContext);                        // slot 7
+    void SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string path, ref Guid eventContext);                        // slot 7
     void GetGroupingParam(out Guid groupingId);                                  // slot 8
     void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);           // slot 9
     void RegisterAudioSessionNotification(IAudioSessionEvents events);           // slot 10
@@ -106,9 +111,9 @@ internal interface IAudioSessionControl2
 {
     void GetState(out int state);                                                // slot 3
     void GetDisplayName([MarshalAs(UnmanagedType.LPWStr)] out string name);     // slot 4
-    void SetDisplayName(string name, ref Guid eventContext);                     // slot 5
+    void SetDisplayName([MarshalAs(UnmanagedType.LPWStr)] string name, ref Guid eventContext);                     // slot 5
     void GetIconPath([MarshalAs(UnmanagedType.LPWStr)] out string path);        // slot 6
-    void SetIconPath(string path, ref Guid eventContext);                        // slot 7
+    void SetIconPath([MarshalAs(UnmanagedType.LPWStr)] string path, ref Guid eventContext);                        // slot 7
     void GetGroupingParam(out Guid groupingId);                                  // slot 8
     void SetGroupingParam(ref Guid groupingId, ref Guid eventContext);           // slot 9
     void RegisterAudioSessionNotification(IAudioSessionEvents events);           // slot 10
@@ -133,8 +138,8 @@ internal interface ISimpleAudioVolume
 [ComImport, Guid("24918ACC-64B3-37C1-8CA9-74A66E9957A8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IAudioSessionEvents
 {
-    void OnDisplayNameChanged(string displayName, ref Guid eventContext);
-    void OnIconPathChanged(string iconPath, ref Guid eventContext);
+    void OnDisplayNameChanged([MarshalAs(UnmanagedType.LPWStr)] string displayName, ref Guid eventContext);
+    void OnIconPathChanged([MarshalAs(UnmanagedType.LPWStr)] string iconPath, ref Guid eventContext);
     void OnSimpleVolumeChanged(float newVolume, [MarshalAs(UnmanagedType.Bool)] bool newMute, ref Guid eventContext);
     void OnChannelVolumeChanged(uint channelCount, [MarshalAs(UnmanagedType.LPArray, SizeParamIndex = 0)] float[] newChannelVolumeArray, uint changedChannel, ref Guid eventContext);
     void OnGroupingParamChanged(ref Guid newGroupingParam, ref Guid eventContext);

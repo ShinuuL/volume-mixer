@@ -12,12 +12,32 @@ public partial class App : Application
 {
     private TrayService? _tray;
     private MainViewModel? _viewModel;
+    private UiWatchdog? _watchdog;
     private readonly AppLog _log = new();
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+
+        // Ferramenta de build: regenera os ícones versionados a partir do IconArt.
+        if (e.Args is ["--export-icons", var repoRoot])
+        {
+            IconArt.ExportAll(repoRoot);
+            Shutdown(0);
+            return;
+        }
+
         DispatcherUnhandledException += OnDispatcherException;
+        SessionEnding += (_, _) => { _log.Info("sessão do Windows encerrando"); Cleanup(); };
+
+        // Em sessão remota (RDP/RustDesk/AnyDesk) a janela com transparência
+        // renderizada por GPU falha com Win32Exception 1816 ("não há cota
+        // suficiente"). Renderização por software evita o problema.
+        if (SystemParameters.IsRemoteSession)
+        {
+            System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            _log.Info("sessão remota detectada: renderização por software");
+        }
 
         // Diagnóstico de crash nativo (SEH) + heartbeat. O app morre em silêncio
         // quando uma exceção nativa derruba o processo sem disparar os handlers
@@ -41,8 +61,9 @@ public partial class App : Application
         // tratadas) para revelar exceções repetidas antes de um crash nativo.
         // Logado como INFO (não ERRO) para não poluir; pode gerar muitos logs de
         // propósito durante o diagnóstico.
-        AppDomain.CurrentDomain.FirstChanceException += (_, args) =>
-            _log.Info($"exceção (first-chance): {args.Exception.GetType().Name}: {args.Exception.Message}");
+        if (_log.Verbose)
+            AppDomain.CurrentDomain.FirstChanceException += (_, args) =>
+                _log.Debug($"exceção (first-chance): {args.Exception.GetType().Name}: {args.Exception.Message}");
 
         // ProcessExit: registra quando o processo está saindo, distinguindo um
         // crash (sem este log) de uma saída normal (menu / Shutdown).
@@ -61,7 +82,10 @@ public partial class App : Application
             var startup = new StartupRegistry();
             _tray = new TrayService(_viewModel, () => new PopupWindow { DataContext = _viewModel }, startup);
             _tray.ClosingRequested += OnClosingRequested;
-            _log.Info("aplicativo iniciado");
+            // Tira o ícone da bandeja antes de reiniciar (Environment.Exit não
+            // roda o Dispose e deixaria um ícone "fantasma").
+            _watchdog = new UiWatchdog(() => UiWatchdog.RestartProcess(() => _tray?.HideIcon()));
+            _log.Info(e.Args.Contains("--restarted") ? "aplicativo reiniciado pelo watchdog" : "aplicativo iniciado");
         }
         catch (Exception ex)
         {
@@ -81,15 +105,36 @@ public partial class App : Application
     private void OnClosingRequested(object? sender, EventArgs e)
     {
         _log.Info("encerrando pelo menu");
-        _viewModel?.Dispose();
-        _tray?.Dispose();
+        Cleanup();
         Shutdown();
+    }
+
+    private void Cleanup()
+    {
+        _watchdog?.Dispose();
+        _watchdog = null;
+        try { _viewModel?.Dispose(); } catch (Exception ex) { _log.Error("falha ao liberar áudio", ex); }
+        try { _tray?.Dispose(); } catch (Exception ex) { _log.Error("falha ao remover ícone da bandeja", ex); }
+        _viewModel = null;
+        _tray = null;
     }
 
     private void OnDispatcherException(object sender, System.Windows.Threading.DispatcherUnhandledExceptionEventArgs e)
     {
-        _log.Error("exceção não tratada na UI", e.Exception);
         e.Handled = true;
+        if (e.Exception is System.ComponentModel.Win32Exception { NativeErrorCode: 1816 })
+        {
+            // Rajada de 1816 na HwndTarget: loga uma vez, fecha o popup (será
+            // recriado no próximo clique) e troca para renderização por software.
+            if (System.Windows.Media.RenderOptions.ProcessRenderMode != System.Windows.Interop.RenderMode.SoftwareOnly)
+            {
+                _log.Error("falha de renderização da janela (1816); usando renderização por software", e.Exception);
+                System.Windows.Media.RenderOptions.ProcessRenderMode = System.Windows.Interop.RenderMode.SoftwareOnly;
+            }
+            _tray?.ClosePopup();
+            return;
+        }
+        _log.Error("exceção não tratada na UI", e.Exception);
     }
 }
 

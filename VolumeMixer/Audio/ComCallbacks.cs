@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace VolumeMixer.Audio;
 
 /// <summary>Agrupa todos os callbacks COM; repassa ao controller via Post().</summary>
@@ -22,13 +24,15 @@ internal sealed class ComCallbacks :
         _owner.NotifyMasterChanged();
     }
 
-    public void OnDefaultDeviceChanged(EDataFlow flow, ERole role, string defaultDeviceId)
+    public void OnDefaultDeviceChanged(EDataFlow flow, ERole role, [MarshalAs(UnmanagedType.LPWStr)] string defaultDeviceId)
     {
-        if (flow == EDataFlow.Render) _owner.RebuildAll();
+        // Não bloqueia o callback COM (a doc da CoreAudio proíbe esperar aqui):
+        // apenas agenda o rebuild na thread MTA, coalescendo rajadas.
+        if (flow == EDataFlow.Render && role == ERole.Multimedia) _owner.QueueRebuild();
     }
 
-    public void OnDeviceStateChanged(string deviceId, int newState) { }
-    public void OnDeviceAdded(string deviceId) { }
-    public void OnDeviceRemoved(string deviceId) { }
-    public void OnPropertyValueChanged(string deviceId, PropertyKey key) { }
+    public void OnDeviceStateChanged([MarshalAs(UnmanagedType.LPWStr)] string deviceId, int newState) => _owner.QueueRebuild();
+    public void OnDeviceAdded([MarshalAs(UnmanagedType.LPWStr)] string deviceId) { }
+    public void OnDeviceRemoved([MarshalAs(UnmanagedType.LPWStr)] string deviceId) { }
+    public void OnPropertyValueChanged([MarshalAs(UnmanagedType.LPWStr)] string deviceId, PropertyKey key) { }
 }

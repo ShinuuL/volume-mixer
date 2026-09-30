@@ -6,13 +6,25 @@ namespace VolumeMixer.Tests.Infrastructure;
 public class TrayIconFactoryTests
 {
     [Fact]
-    public void Create_returns_16x16_icon()
+    public void Create_returns_square_small_icon_for_current_dpi()
     {
         using var icon = TrayIconFactory.Create();
 
         Assert.NotNull(icon);
-        Assert.Equal(16, icon.Width);
-        Assert.Equal(16, icon.Height);
+        Assert.Equal(icon.Width, icon.Height);
+        Assert.InRange(icon.Width, 16, 64);
+    }
+
+    [Fact]
+    public void Create_muted_draws_different_pixels()
+    {
+        using var normal = TrayIconFactory.Create(muted: false).ToBitmap();
+        using var muted = TrayIconFactory.Create(muted: true).ToBitmap();
+        var differs = false;
+        for (var x = 0; x < normal.Width && !differs; x++)
+            for (var y = 0; y < normal.Height && !differs; y++)
+                differs = normal.GetPixel(x, y) != muted.GetPixel(x, y);
+        Assert.True(differs);
     }
 
     [Fact]

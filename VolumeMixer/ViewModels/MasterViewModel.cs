@@ -53,6 +53,9 @@ public sealed class MasterViewModel : ViewModelBase
         VolumePercent = parsed.Value; // setter envia ao controlador
     }
 
+    /// <summary>Relê o volume master (ex: ao abrir o popup, caso um callback tenha se perdido).</summary>
+    public void Refresh() => UpdateFrom(_audio.GetMaster());
+
     public void UpdateFrom(MasterInfo info)
     {
         _updatingFromSystem = true;
