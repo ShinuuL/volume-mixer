@@ -11,6 +11,8 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <ApplicationIcon>Assets\VolumeMixer.ico</ApplicationIcon>
+    <Version>1.0.2</Version>
+    <Product>Volume Mixer</Product>
   </PropertyGroup>
   <ItemGroup>
     <InternalsVisibleTo Include="VolumeMixer.Tests" />

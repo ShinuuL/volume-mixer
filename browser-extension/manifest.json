@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Volume Mixer - Guias e Apps",
   "short_name": "Volume Mixer",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Controle de volume individual por site/app do navegador (guias e apps instalados), salvo por site.",
   "icons": {
     "16": "icons/icon-16.png",
